@@ -1,6 +1,6 @@
 services:
   aiostreams:
-    image: ghcr.io/viren070/aiostreams:latest
+    image: ghcr.io/crunging/aiostreams:build-bitrate
     container_name: aiostreams
     restart: unless-stopped
     ports:
