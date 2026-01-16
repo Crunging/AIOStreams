@@ -3,7 +3,7 @@ name: Crunging Bitrate Branch
 on:
   push:
     branches:
-      - 'bitrate'
+      - 'build/bitrate'
 
 env:
   REGISTRY: ghcr.io
