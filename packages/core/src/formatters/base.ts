@@ -1003,12 +1003,12 @@ String: {config.addonName}
 {tools.newLine}
 
 Number: {stream.size}
-    ::bytes {stream.size::bytes}
-    ::time {stream.size::time}
-    ::hex {stream.size::hex}
-    ::octal {stream.size::octal}
-    ::binary {stream.size::binary}
-    ::bitrate {stream.bitrate::bitrate}
+  ::bytes {stream.size::bytes}
+  ::time {stream.size::time}
+  ::hex {stream.size::hex}
+  ::octal {stream.size::octal}
+  ::binary {stream.size::binary}
+  ::bitrate {stream.bitrate::bitrate}
 {tools.newLine}
 
 Array: {stream.languages}
