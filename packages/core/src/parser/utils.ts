@@ -174,8 +174,7 @@ export function parseBitrate(bitrateString: string): number | undefined {
     if (!/^\d+(\.\d+)?$/.test(trimmed)) {
       return undefined;
     }
-    const floatVal = parseFloat(trimmed);
-    return isNaN(floatVal) ? undefined : floatVal;
+    return parseFloat(trimmed);
   }
   const num = parseFloat(match[1]);
   const unit = match[3].toLowerCase();
