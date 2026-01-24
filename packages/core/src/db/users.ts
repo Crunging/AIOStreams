@@ -439,24 +439,19 @@ export class UserRepository {
         );
       }
 
-      // Reuse getUser to validate current password and retrieve/migrate config
       const currentConfig = await this.getUser(uuid, currentPassword);
       
-      // getUser should throw if invalid, but purely for type safety:
       if (!currentConfig) {
         throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
       }
 
-      // Encrypt config with NEW password
       const { encryptedConfig, salt: newConfigSalt } = await this.encryptConfig(
         currentConfig,
         newPassword
       );
 
-      // Generate new password hash
       const newPasswordHash = await getTextHash(newPassword);
 
-      // Encrypt new password for the response token
       const { success, data: newEncryptedPasswordToken } = encryptString(newPassword);
       if (!success) {
         throw new APIError(constants.ErrorCode.ENCRYPTION_ERROR);
@@ -488,7 +483,13 @@ export class UserRepository {
         throw new APIError(constants.ErrorCode.DATABASE_ERROR);
       } finally {
         if (tx && !committed) {
-          await tx.rollback();
+          try {
+            await tx.rollback();
+          } catch (rollbackError) {
+            logger.error(
+              `Failed to rollback transaction for user ${uuid}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+            );
+          }
         }
       }
     });
