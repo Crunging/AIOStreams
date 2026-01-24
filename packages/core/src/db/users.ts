@@ -426,4 +426,71 @@ export class UserRepository {
 
     return uuid;
   }
+
+  static async changePassword(
+    uuid: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ encryptedPassword: string }> {
+    return txQueue.enqueue(async () => {
+      if (newPassword.length < 6) {
+        return Promise.reject(
+          new APIError(constants.ErrorCode.USER_NEW_PASSWORD_TOO_SHORT)
+        );
+      }
+
+      // Reuse getUser to validate current password and retrieve/migrate config
+      const currentConfig = await this.getUser(uuid, currentPassword);
+      
+      // getUser should throw if invalid, but purely for type safety:
+      if (!currentConfig) {
+        throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
+      }
+
+      // Encrypt config with NEW password
+      const { encryptedConfig, salt: newConfigSalt } = await this.encryptConfig(
+        currentConfig,
+        newPassword
+      );
+
+      // Generate new password hash
+      const newPasswordHash = await getTextHash(newPassword);
+
+      // Encrypt new password for the response token
+      const { success, data: newEncryptedPasswordToken } = encryptString(newPassword);
+      if (!success) {
+        throw new APIError(constants.ErrorCode.ENCRYPTION_ERROR);
+      }
+
+      let tx;
+      let committed = false;
+      try {
+        tx = await db.begin();
+        
+        await tx.execute(
+          'UPDATE users SET password_hash = ?, config = ?, config_salt = ?, updated_at = CURRENT_TIMESTAMP WHERE uuid = ?',
+          [newPasswordHash, encryptedConfig, newConfigSalt, uuid]
+        );
+
+        await tx.commit();
+        committed = true;
+        logger.info(`Changed password for user ${uuid}`);
+
+        return { encryptedPassword: newEncryptedPasswordToken };
+
+      } catch (error) {
+        logger.error(
+          `Failed to change password for user ${uuid}: ${error instanceof Error ? error.message : String(error)}`
+        );
+        if (error instanceof APIError) {
+          throw error;
+        }
+        throw new APIError(constants.ErrorCode.DATABASE_ERROR);
+      } finally {
+        if (tx && !committed) {
+          await tx.rollback();
+        }
+      }
+    });
+  }
 }

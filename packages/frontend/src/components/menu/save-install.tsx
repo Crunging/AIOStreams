@@ -369,6 +369,45 @@ function Content() {
     }
   };
 
+  const changePasswordModal = useDisclosure(false);
+  const [changePasswordData, setChangePasswordData] = React.useState({
+    currentPassword: '',
+    newPassword: '',
+  });
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (changePasswordData.newPassword.length < 6) {
+      toast.error('New password must be at least 6 characters long');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await UserConfigAPI.changePassword(
+        uuid!,
+        changePasswordData.currentPassword,
+        changePasswordData.newPassword
+      );
+
+      if (!result.success) {
+        toast.error(result.error?.message || 'Failed to change password');
+        return;
+      }
+
+      toast.success(
+        'Password changed successfully. Please reinstall AIOStreams.'
+      );
+      setPassword(changePasswordData.newPassword);
+      setEncryptedPassword(result.data!.encryptedPassword);
+      changePasswordModal.close();
+      setChangePasswordData({ currentPassword: '', newPassword: '' });
+    } catch (err) {
+      toast.error('Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <div className="flex items-center w-full">
@@ -645,15 +684,71 @@ function Content() {
         >
           <div className="flex items-center gap-3">
             {uuid && (
-              <Button intent="alert" rounded onClick={deleteUserModal.open}>
-                Delete User
-              </Button>
+              <>
+                <Button intent="alert" rounded onClick={changePasswordModal.open}>
+                  Change Password
+                </Button>
+                <Button intent="alert" rounded onClick={deleteUserModal.open}>
+                  Delete User
+                </Button>
+              </>
             )}
             <Button intent="alert" rounded onClick={confirmResetProps.open}>
               Reset Configuration
             </Button>
           </div>
         </SettingsCard>
+
+        <Modal
+          open={changePasswordModal.isOpen}
+          onOpenChange={changePasswordModal.toggle}
+          title="Change Password"
+          description={
+            <Alert
+              intent="warning"
+              description="Changing your password will invalidate ALL existing installations. You will need to re-install AIOStreams after this change."
+            />
+          }
+        >
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <PasswordInput
+              label="Current Password"
+              value={changePasswordData.currentPassword}
+              required
+              placeholder="Enter your current password"
+              onValueChange={(value) =>
+                setChangePasswordData((prev) => ({
+                  ...prev,
+                  currentPassword: value,
+                }))
+              }
+            />
+            <PasswordInput
+              label="New Password"
+              value={changePasswordData.newPassword}
+              required
+              placeholder="Enter your new password"
+              onValueChange={(value) =>
+                setChangePasswordData((prev) => ({
+                  ...prev,
+                  newPassword: value,
+                }))
+              }
+            />
+            <div className="pt-2 flex justify-end gap-3">
+              <Button
+                type="button"
+                intent="gray-outline"
+                onClick={changePasswordModal.close}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" intent="alert" loading={loading}>
+                Change Password
+              </Button>
+            </div>
+          </form>
+        </Modal>
 
         <Modal
           open={deleteUserModal.isOpen}
