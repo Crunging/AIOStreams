@@ -445,6 +445,15 @@ export class UserRepository {
         throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
       }
 
+      const userRows = await db.query('SELECT password_hash FROM users WHERE uuid = ?', [uuid]);
+      if (userRows.length && await this.verifyUserPassword(newPassword, userRows[0].password_hash)) {
+         throw new APIError(
+            constants.ErrorCode.USER_INVALID_CONFIG, 
+            undefined, 
+            'New password cannot be the same as the current password'
+         );
+      }
+
       const { encryptedConfig, salt: newConfigSalt } = await this.encryptConfig(
         currentConfig,
         newPassword

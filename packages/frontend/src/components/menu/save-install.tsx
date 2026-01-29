@@ -537,6 +537,10 @@ function Content() {
       toast.error('New password must be at least 6 characters long');
       return;
     }
+    if (changePasswordData.newPassword === changePasswordData.currentPassword) {
+      toast.error('New password cannot be the same as current password');
+      return;
+    }
     setLoading(true);
     try {
       const result = await UserConfigAPI.changePassword(
