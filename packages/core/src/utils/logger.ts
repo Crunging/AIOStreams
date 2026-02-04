@@ -46,11 +46,13 @@ const moduleMap: { [key: string]: string } = {
   'metadata-service': '🔍  METADATA',
   torrent: '👤  TORRENT',
   knaben: '🔍  KNABEN',
+  eztv: '📺  EZTV',
   'torrent-galaxy': '🌐  TGx',
   templates: '📄  TEMPLATES',
   nzbdav: '📂  NZBDAV',
   altmount: '📂  ALTMOUNT',
   seadex: '🌊  SEADEX',
+  'stream-expression': '✨ SEL',
 };
 
 // Define colors for each log level using full names

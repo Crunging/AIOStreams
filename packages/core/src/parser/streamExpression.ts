@@ -10,6 +10,10 @@ import { formatZodError } from '../utils/config.js';
 import { ZodError } from 'zod';
 import { PASSTHROUGH_STAGES } from '../utils/constants.js';
 import { parseBitrate } from './utils.js';
+import { createLogger } from '../utils/logger.js';
+import { ExpressionContext } from '../streams/context.js';
+
+const logger = createLogger('stream-expression');
 
 export abstract class StreamExpressionEngine {
   protected parser: Parser;
@@ -68,6 +72,30 @@ export abstract class StreamExpressionEngine {
     });
 
     this.setupParserFunctions();
+  }
+
+  protected setupExpressionContextConstants(context: ExpressionContext) {
+    this.parser.consts.queryType = context.queryType ?? '';
+    this.parser.consts.isAnime = context.isAnime ?? false;
+    this.parser.consts.season = context.season ?? -1;
+    this.parser.consts.episode = context.episode ?? -1;
+    this.parser.consts.genres = context.genres ?? [];
+    this.parser.consts.title = context.title ?? '';
+    this.parser.consts.year = context.year ?? 0;
+    this.parser.consts.yearEnd = context.yearEnd ?? 0;
+    this.parser.consts.daysSinceRelease = context.daysSinceRelease ?? -1;
+    this.parser.consts.runtime = context.runtime ?? 0;
+    this.parser.consts.absoluteEpisode = context.absoluteEpisode ?? -1;
+    this.parser.consts.originalLanguage = context.originalLanguage ?? '';
+    this.parser.consts.hasSeaDex = context.hasSeaDex ?? false;
+    this.parser.consts.hasNextEpisode = context.hasNextEpisode ?? false;
+    this.parser.consts.daysUntilNextEpisode =
+      context.daysUntilNextEpisode ?? -1;
+    this.parser.consts.daysSinceFirstAired = context.daysSinceFirstAired ?? -1;
+    this.parser.consts.daysSinceLastAired = context.daysSinceLastAired ?? -1;
+    this.parser.consts.latestSeason = context.latestSeason ?? -1;
+    this.parser.consts.ongoingSeason =
+      context.hasNextEpisode && context.season === context.latestSeason;
   }
 
   private setupParserFunctions() {
@@ -898,6 +926,32 @@ export abstract class StreamExpressionEngine {
       return streams.filter((stream) => stream.seadex?.isSeadex === true);
     };
 
+    this.parser.functions.score = function (
+      streams: ParsedStream[],
+      minScore?: number,
+      maxScore?: number
+    ) {
+      if (!Array.isArray(streams) || streams.some((stream) => !stream.type)) {
+        throw new Error('Your streams input must be an array of streams');
+      } else if (
+        (minScore !== undefined && typeof minScore !== 'number') ||
+        (maxScore !== undefined && typeof maxScore !== 'number')
+      ) {
+        throw new Error('Score boundaries must be numbers if provided');
+      }
+      return streams.filter((stream) => {
+        const score = stream.streamExpressionScore;
+        if (score === undefined) return false;
+        if (minScore !== undefined && score < minScore) {
+          return false;
+        }
+        if (maxScore !== undefined && score > maxScore) {
+          return false;
+        }
+        return true;
+      });
+    };
+
     this.parser.functions.message = function (
       streams: ParsedStream[],
       mode: 'exact' | 'includes',
@@ -1020,12 +1074,21 @@ export abstract class StreamExpressionEngine {
         reject(new Error('Condition parsing timed out'));
       }, 1);
 
+      const start = Date.now();
       try {
         const result = this.parser.evaluate(condition);
         clearTimeout(timeout);
+        const elapsed = Date.now() - start;
+        logger.debug(
+          `Expression evaluated in ${elapsed}ms: "${condition.length > 100 ? condition.substring(0, 100) + '...' : condition}"`
+        );
         resolve(result);
       } catch (error) {
         clearTimeout(timeout);
+        const elapsed = Date.now() - start;
+        logger.debug(
+          `Expression failed after ${elapsed}ms: "${condition.length > 100 ? condition.substring(0, 100) + '...' : condition}"`
+        );
         if (error instanceof Error) {
           error.message = `Expression could not be evaluated: ${error.message}`;
         }
@@ -1142,6 +1205,29 @@ export class ExitConditionEvaluator extends StreamExpressionEngine {
   }
 }
 
+export class PrecacheConditionEvaluator extends StreamExpressionEngine {
+  constructor(streams: ParsedStream[], context: ExpressionContext) {
+    super();
+    this.parser.consts.streams = streams;
+    this.setupExpressionContextConstants(context);
+  }
+
+  async evaluate(condition: string): Promise<boolean> {
+    const result = await this.evaluateCondition(condition);
+    if (typeof result !== 'boolean') {
+      throw new Error(
+        `Precache condition must evaluate to a boolean, got: ${typeof result}`
+      );
+    }
+    return result;
+  }
+
+  static async testEvaluate(condition: string): Promise<boolean> {
+    const parser = new PrecacheConditionEvaluator([], { queryType: 'series' });
+    return await parser.evaluate(condition);
+  }
+}
+
 export class GroupConditionEvaluator extends StreamExpressionEngine {
   private previousStreams: ParsedStream[];
   private totalStreams: ParsedStream[];
@@ -1180,53 +1266,10 @@ export class GroupConditionEvaluator extends StreamExpressionEngine {
   }
 }
 
-/**
- * Expression context containing metadata and request information
- * that can be accessed in stream expressions.
- */
-export interface ExpressionContext {
-  type?: string;
-  id?: string;
-  isAnime?: boolean;
-  queryType?: string;
-  season?: number;
-  episode?: number;
-  // Metadata fields
-  title?: string;
-  titles?: string[];
-  year?: number;
-  yearEnd?: number;
-  genres?: string[];
-  runtime?: number;
-  absoluteEpisode?: number;
-  originalLanguage?: string;
-  daysSinceRelease?: number; // age in days of the movie / **episode**
-  // Anime entry data
-  anilistId?: number;
-  malId?: number;
-  // SeaDex availability
-  hasSeaDex?: boolean;
-}
-
 export class StreamSelector extends StreamExpressionEngine {
   constructor(context: ExpressionContext) {
     super();
-
-    // we need to ensure these are always defined to a safe default
-    // because otherwise the expression parser may throw errors
-    this.parser.consts.queryType = context.queryType ?? '';
-    this.parser.consts.isAnime = context.isAnime ?? false;
-    this.parser.consts.season = context.season ?? -1;
-    this.parser.consts.episode = context.episode ?? -1;
-    this.parser.consts.genres = context.genres ?? [];
-    this.parser.consts.title = context.title ?? '';
-    this.parser.consts.year = context.year ?? 0;
-    this.parser.consts.yearEnd = context.yearEnd ?? 0;
-    this.parser.consts.daysSinceRelease = context.daysSinceRelease ?? -1;
-    this.parser.consts.runtime = context.runtime ?? 0;
-    this.parser.consts.absoluteEpisode = context.absoluteEpisode ?? -1;
-    this.parser.consts.originalLanguage = context.originalLanguage ?? '';
-    this.parser.consts.hasSeaDex = context.hasSeaDex ?? false;
+    this.setupExpressionContextConstants(context);
   }
 
   async select(
