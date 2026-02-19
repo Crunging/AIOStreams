@@ -46,7 +46,11 @@ const SearchApiRequestSchema = z.object({
 app.get('/', async (c) => {
   try {
     const query = c.req.query();
-    const { type, id, requiredFields, format } = SearchApiRequestSchema.parse(query);
+    const allQueries = c.req.queries();
+    const { type, id, requiredFields, format } = SearchApiRequestSchema.parse({
+      ...query,
+      requiredFields: allQueries.requiredFields ?? query.requiredFields,
+    });
     
     let encodedUserData: string | undefined = c.req.header('x-aiostreams-user-data');
     let auth: string | undefined = c.req.header('authorization');
@@ -182,10 +186,7 @@ app.get('/', async (c) => {
       response,
       formatterContext
     );
-    const stremioStreams = stremioData?.streams.filter(
-      (stream) =>
-        !['statistic', 'error'].includes(stream.streamData?.type || '')
-    );
+    const stremioStreams = stremioData?.streams;
 
     const apiData = await transformer.transformStreams(
       response,
@@ -194,10 +195,13 @@ app.get('/', async (c) => {
     if (stremioStreams && format) {
       apiData.results = apiData.results.map((result, index) => {
         const stream = stremioStreams[index];
+        if (!stream || ['statistic', 'error'].includes(stream.streamData?.type || '')) {
+            return result;
+        }
         return {
           ...result,
-          name: stream?.name,
-          description: stream?.description,
+          name: stream.name,
+          description: stream.description,
         };
       });
     }

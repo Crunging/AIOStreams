@@ -38,7 +38,7 @@ const createRateLimiter = (
     standardHeaders: 'draft-6',
     keyGenerator: (c) => {
       const info = getConnInfo(c);
-      const ip = info.remote.address || 'unknown';
+      const ip = info.remote?.address || 'unknown';
       return `${prefix}:${ip}`;
     },
     store: redisClient
@@ -49,7 +49,7 @@ const createRateLimiter = (
       : undefined, // undefined falls back to MemoryStore
     handler: (c) => {
       const info = getConnInfo(c);
-      const ip = info.remote.address || 'unknown';
+      const ip = info.remote?.address || 'unknown';
       logger.warn(
         `${prefix} rate limit exceeded for IP: ${ip}`
       );

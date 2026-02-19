@@ -91,7 +91,7 @@ app.post('/', async (c) => {
     success: userDataSuccess,
     error: userDataError,
     data: userDataData,
-  } = UserDataSchema.safeParse(context.userData);
+  } = UserDataSchema.safeParse(context?.userData);
   if (!userDataSuccess) {
     logger.error('Invalid user data', { error: userDataError });
     throw new APIError(

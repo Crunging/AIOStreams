@@ -4,8 +4,6 @@ import {
   SubtitleResponse,
   createLogger,
   StremioTransformer,
-  APIError,
-  constants,
 } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 

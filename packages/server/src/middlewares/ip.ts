@@ -81,7 +81,15 @@ export const ipMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   
   // Use getConnInfo to get the remote address from the underlying node request
   const connInfo = getConnInfo(c);
-  const connIp = connInfo.remote.address || '';
+  const connIp = connInfo.remote.address ?? undefined;
+
+  if (!connIp) {
+    // No connection IP available; skip IP-based logic
+    c.set('userIp', undefined);
+    c.set('requestIp', undefined);
+    await next();
+    return;
+  }
 
   if (Env.LOG_SENSITIVE_INFO) {
     const headers = {

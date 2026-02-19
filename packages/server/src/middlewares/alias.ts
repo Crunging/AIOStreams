@@ -21,7 +21,6 @@ export async function resolveUuidAliasForUserApi(c: Context<HonoEnv>, next: Next
   } else if (method === 'POST') {
     try {
       const body = await c.req.json();
-      c.set('parsedBody', body);
       const value = body.uuid;
       if (typeof value === 'string' && !uuidRegex.test(value)) {
         const configuration = Env.ALIASED_CONFIGURATIONS.get(value);
@@ -29,19 +28,25 @@ export async function resolveUuidAliasForUserApi(c: Context<HonoEnv>, next: Next
           body.uuid = configuration.uuid;
         }
       }
-    } catch {}
+      c.set('parsedBody', body);
+    } catch {
+      // Body parsing failed - may not be JSON or empty body
+    }
   } else if (method === 'PUT' || method === 'DELETE') {
     try {
       const body = await c.req.json();
-      c.set('parsedBody', body);
       const value = body.uuid;
       if (typeof value === 'string' && !uuidRegex.test(value)) {
         const configuration = Env.ALIASED_CONFIGURATIONS.get(value);
         if (configuration?.uuid) {
+          body.uuid = configuration.uuid;
           c.set('uuid', configuration.uuid);
         }
       }
-    } catch {}
+      c.set('parsedBody', body);
+    } catch {
+      // Body parsing failed - may not be JSON or empty body
+    }
   }
 
   await next();

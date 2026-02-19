@@ -29,21 +29,29 @@ export const meta = async (c: Context<HonoEnv>) => {
     });
 
     if (id.startsWith('aiostreamserror.')) {
-      return c.json({
-        meta: StremioTransformer.createErrorMeta(
-          JSON.parse(decodeURIComponent(id.split('.').slice(1).join('.')))
-        ),
-      });
+      try {
+        return c.json({
+          meta: StremioTransformer.createErrorMeta(
+            JSON.parse(decodeURIComponent(id.split('.').slice(1).join('.')))
+          ),
+        });
+      } catch {
+        return c.json({
+          meta: StremioTransformer.createErrorMeta({
+            errorDescription: 'Invalid error payload',
+          }),
+        });
+      }
     }
 
     const aiostreams = new AIOStreams(userData);
     await aiostreams.initialise();
 
-    const meta = await aiostreams.getMeta(type, id);
+    const fetchedMeta = await aiostreams.getMeta(type, id);
     const streamContext = aiostreams.getStreamContext();
 
     const transformed = await transformer.transformMeta(
-      meta,
+      fetchedMeta,
       streamContext?.toFormatterContext(),
       {
         provideStreamData: true,
