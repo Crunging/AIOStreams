@@ -24,7 +24,7 @@ export const addonCatalog = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    const id = c.req.param('id').replace('.json', '');
+    const id = c.req.param('id').replace(/\.json$/, '');
     logger.debug('Addon catalog request received', {
       type,
       id,

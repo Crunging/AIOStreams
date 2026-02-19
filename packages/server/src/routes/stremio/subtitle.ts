@@ -27,9 +27,9 @@ export const subtitle = async (c: Context<HonoEnv>) => {
     let extra = c.req.param('extra');
 
     if (extra) {
-      extra = extra.replace('.json', '');
+      extra = extra.replace(/\.json$/, '');
     } else {
-      id = id.replace('.json', '');
+      id = id.replace(/\.json$/, '');
     }
 
     return c.json(

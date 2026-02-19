@@ -45,7 +45,7 @@ const FormatterContextSchema = z.object({
   anilistId: z.number().optional(),
   malId: z.number().optional(),
   hasSeaDex: z.boolean().optional(),
-  maxRseScore: z.number().optional(),
+  maxSeScore: z.number().optional(),
   maxRegexScore: z.number().optional(),
 });
 

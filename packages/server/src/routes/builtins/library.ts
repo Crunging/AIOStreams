@@ -51,9 +51,9 @@ app.get('/:encodedConfig/catalog/:type/:id/:extra?', async (c) => {
   let extra = c.req.param('extra');
 
   if (extra) {
-    extra = extra.replace('.json', '');
+    extra = extra.replace(/\.json$/, '');
   } else {
-    id = id.replace('.json', '');
+    id = id.replace(/\.json$/, '');
   }
 
   try {
@@ -61,7 +61,7 @@ app.get('/:encodedConfig/catalog/:type/:id/:extra?', async (c) => {
       encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
       c.get('userIp')
     );
-    const catalog = await addon.getCatalog(type, id!, extra);
+    const catalog = await addon.getCatalog(type, id, extra);
     return c.json({ metas: catalog });
   } catch (error) {
     logger.error('Failed to get library catalog:', error);
@@ -72,13 +72,13 @@ app.get('/:encodedConfig/catalog/:type/:id/:extra?', async (c) => {
 app.get('/:encodedConfig/meta/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const addon = new LibraryAddon(
       encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
       c.get('userIp')
     );
-    const meta = await addon.getMeta(type, id!);
+    const meta = await addon.getMeta(type, id);
     return c.json({ meta });
   } catch (error) {
     logger.error('Failed to get library meta:', error);
@@ -89,13 +89,13 @@ app.get('/:encodedConfig/meta/:type/:id', async (c) => {
 app.get('/:encodedConfig/stream/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const addon = new LibraryAddon(
       encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
       c.get('userIp')
     );
-    const streams = await addon.getStreams(type, id!);
+    const streams = await addon.getStreams(type, id);
     return c.json({ streams });
   } catch (error) {
     logger.error('Failed to get library streams:', error);

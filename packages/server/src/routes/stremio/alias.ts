@@ -6,7 +6,8 @@ const logger = createLogger('server');
 
 export const alias = async (c: Context<HonoEnv>) => {
   const alias = c.req.param('alias');
-  const wildcardPath = c.req.path.split('/').slice(3).join('/'); // Skip /stremio/u/:alias
+  const pathParts = c.req.path.split('/').filter(Boolean);
+  const wildcardPath = pathParts.slice(3).join('/'); // Skip stremio/u/:alias
 
   const configuration = Env.ALIASED_CONFIGURATIONS.get(alias);
   if (!configuration || !configuration.uuid || !configuration.password) {

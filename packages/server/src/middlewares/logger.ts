@@ -21,7 +21,12 @@ export const loggerMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
     type: 'request',
     method: method,
     path: makeUrlLogSafe(url),
-    query: c.req.query(),
+    query: Object.fromEntries(
+      Object.entries(c.req.query()).map(([k, v]) => {
+        if (k === 'password' || k === 'apiKey') return [k, '****'];
+        return [k, v];
+      })
+    ),
     ip: userIp ? maskSensitiveInfo(userIp) : undefined,
     contentType: c.req.header('content-type'),
     userAgent: c.req.header('user-agent'),

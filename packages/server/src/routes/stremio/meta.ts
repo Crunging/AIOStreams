@@ -4,8 +4,6 @@ import {
   MetaResponse,
   createLogger,
   StremioTransformer,
-  APIError,
-  constants,
 } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
@@ -23,7 +21,7 @@ export const meta = async (c: Context<HonoEnv>) => {
   const transformer = new StremioTransformer(userData);
   try {
     const type = c.req.param('type');
-    const id = c.req.param('id').replace('.json', '');
+    const id = c.req.param('id').replace(/\.json$/, '');
     logger.debug('Meta request received', {
       type,
       id,

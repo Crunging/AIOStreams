@@ -24,7 +24,7 @@ app.get('/:encodedConfig/manifest.json', async (c) => {
 app.get('/:encodedConfig/meta/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const config = JSON.parse(fromUrlSafeBase64(encodedConfig));
     const addon = new GDriveAddon(config);
@@ -43,9 +43,9 @@ app.get('/:encodedConfig/catalog/:type/:id/:extra?', async (c) => {
   let extra = c.req.param('extra');
 
   if (extra) {
-    extra = extra.replace('.json', '');
+    extra = extra.replace(/\.json$/, '');
   } else {
-    id = id.replace('.json', '');
+    id = id.replace(/\.json$/, '');
   }
 
   try {
@@ -62,7 +62,7 @@ app.get('/:encodedConfig/catalog/:type/:id/:extra?', async (c) => {
 app.get('/:encodedConfig/stream/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const config = JSON.parse(fromUrlSafeBase64(encodedConfig));
     const addon = new GDriveAddon(config);

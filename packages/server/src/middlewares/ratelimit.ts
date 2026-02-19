@@ -55,7 +55,7 @@ const createRateLimiter = (
       );
       
       const stremioResourceRequestRegex =
-        /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9+/=]+\/(stream|meta|addon_catalog|subtitles|catalog)\/[^/]+\/[^/]+(?:\/[^/]+)?\.json\/?$/;
+        /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9-_=]+\/(stream|meta|addon_catalog|subtitles|catalog)/;
       const resource = stremioResourceRequestRegex.exec(new URL(c.req.url).pathname);
       
       if (resource) {

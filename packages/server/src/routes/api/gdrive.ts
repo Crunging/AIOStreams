@@ -33,6 +33,9 @@ app.post('/', async (c) => {
       })
     );
   } catch (error: any) {
+    if (error instanceof APIError) {
+      throw error;
+    }
     logger.error(`GDrive authorisation failed: ${error.message}`);
     throw new APIError(
       constants.ErrorCode.INTERNAL_SERVER_ERROR,

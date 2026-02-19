@@ -15,7 +15,7 @@ const logger = createLogger('server');
 const getManifest = async (config?: UserData): Promise<Manifest> => {
   let addonId = Env.ADDON_ID;
   if (config) {
-    addonId = addonId += `.${config.uuid?.substring(0, 12)}`;
+    addonId += `.${config.uuid?.substring(0, 12)}`;
   }
   let catalogs: Manifest['catalogs'] = [];
   let resources: Manifest['resources'] = [];

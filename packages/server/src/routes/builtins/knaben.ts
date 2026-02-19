@@ -22,13 +22,13 @@ app.get('/:encodedConfig/manifest.json', async (c) => {
 app.get('/:encodedConfig/stream/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const addon = new KnabenAddon(
       encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
       c.get('userIp')
     );
-    const streams = await addon.getStreams(type, id!);
+    const streams = await addon.getStreams(type, id);
     return c.json({ streams });
   } catch (error) {
     logger.error('Failed to get knaben streams:', error);

@@ -13,19 +13,41 @@ function isValidIp(ip: string | undefined): boolean {
   return isIP(ip) !== 0;
 }
 
+const ipv4ToLong = (ip: string) =>
+  ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+
+const ipv6ToBigInt = (ip: string): bigint => {
+  const expanded = ip.includes('::')
+    ? ip.replace('::', ':' + '0:'.repeat(8 - ip.split(':').filter(Boolean).length))
+    : ip;
+  
+  return expanded.split(':').reduce(
+    (acc, hex) => (acc << 16n) + BigInt(parseInt(hex || '0', 16)),
+    0n
+  );
+};
+
 const isIpInRange = (ip: string, range: string) => {
   if (range.includes('/')) {
     // CIDR notation
     const [rangeIp, prefixLength] = range.split('/');
-    const ipToLong = (ip: string) =>
-      ip
-        .split('.')
-        .reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+    const prefix = parseInt(prefixLength, 10);
+
     try {
-      const ipLong = ipToLong(ip);
-      const rangeLong = ipToLong(rangeIp);
-      const mask = ~(2 ** (32 - parseInt(prefixLength, 10)) - 1) >>> 0;
-      return (ipLong & mask) === (rangeLong & mask);
+      if (rangeIp.includes(':')) {
+         // IPv6
+         if (!ip.includes(':')) return false;
+         const ipBig = ipv6ToBigInt(ip);
+         const rangeBig = ipv6ToBigInt(rangeIp);
+         return (ipBig >> BigInt(128 - prefix)) === (rangeBig >> BigInt(128 - prefix));
+      } else {
+        // IPv4
+        if (ip.includes(':')) return false;
+        const ipLong = ipv4ToLong(ip);
+        const rangeLong = ipv4ToLong(rangeIp);
+        const mask = ~(2 ** (32 - prefix) - 1) >>> 0;
+        return (ipLong & mask) === (rangeLong & mask);
+      }
     } catch {
       return false;
     }

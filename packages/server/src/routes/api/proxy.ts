@@ -347,6 +347,9 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
     let redirectCount = 0;
     let method = c.req.method as Dispatcher.HttpMethod;
 
+    // @ts-ignore
+    const bodyBuffer = isBodyRequest ? Buffer.from(await c.req.arrayBuffer()) : undefined;
+
     while (redirectCount < maxRedirects) {
       const urlObj = new URL(currentUrl);
       if (Env.BASE_URL && urlObj.origin === Env.BASE_URL) {
@@ -401,19 +404,30 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
         url: currentUrl,
       });
 
-      // @ts-ignore
-      const body = isBodyRequest ? Buffer.from(await c.req.arrayBuffer()) : undefined;
+      // Only attach body if we still have the original method (not downgraded to GET by redirect)
+      // and it is a body-compatible method
+      const upstreamBody = (method === 'POST' || method === 'PUT' || method === 'PATCH') ? bodyBuffer : undefined;
 
       upstreamResponse = await request(currentUrl, {
         method: method,
         headers: headers,
         dispatcher: proxyAgent,
-        body: body,
+        body: upstreamBody,
         bodyTimeout: 0,
         headersTimeout: 0,
       });
 
       if ([301, 302, 303, 307, 308].includes(upstreamResponse.statusCode)) {
+        // Drain the response body to avoid leaks before following redirect
+        try {
+          // Dump the body if we are redirecting
+           if (!upstreamResponse.body.destroyed) {
+             for await (const _chunk of upstreamResponse.body) {
+               // drain
+             }
+           }
+        } catch {}
+
         redirectCount++;
         const location = upstreamResponse.headers['location'];
         if (!location || typeof location !== 'string') {

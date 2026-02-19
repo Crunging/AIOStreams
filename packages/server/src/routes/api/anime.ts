@@ -53,7 +53,11 @@ app.get('/', async (c) => {
       );
     }
     logger.error(`Mapping check failed: ${error.message}`);
-    throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR, error.message);
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      undefined,
+      error.message
+    );
   }
 });
 

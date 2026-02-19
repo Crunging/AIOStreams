@@ -11,16 +11,14 @@ const logger = createLogger('server');
 
 export const catalog = async (c: Context<HonoEnv>) => {
   const userData = c.get('userData');
-  const transformer = new StremioTransformer(userData!);
   if (!userData) {
-    return c.json(
-      transformer.transformCatalog({
-        success: false,
-        data: [],
-        errors: [{ description: 'Please configure the addon first' }],
-      })
-    );
+    return c.json({
+      metas: [],
+      hasMore: false,
+      errors: [{ description: 'Please configure the addon first' }],
+    });
   }
+  const transformer = new StremioTransformer(userData);
 
   try {
     const type = c.req.param('type');
@@ -28,9 +26,9 @@ export const catalog = async (c: Context<HonoEnv>) => {
     let extra = c.req.param('extra');
 
     if (extra) {
-      extra = extra.replace('.json', '');
+      extra = extra.replace(/\.json$/, '');
     } else {
-      id = id.replace('.json', '');
+      id = id.replace(/\.json$/, '');
     }
 
     return c.json(

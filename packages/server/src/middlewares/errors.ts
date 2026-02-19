@@ -32,7 +32,7 @@ export const errorMiddleware = (
         error: {
           code: constants.ErrorCode.BAD_REQUEST,
           message: 'Invalid Request',
-          issues: JSON.parse(error.message),
+          issues: error.issues,
         },
       }),
       400

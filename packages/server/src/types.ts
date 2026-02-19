@@ -6,5 +6,6 @@ export type HonoEnv = {
     userIp?: string;
     requestIp?: string;
     uuid?: string;
+    parsedBody?: any;
   };
 };

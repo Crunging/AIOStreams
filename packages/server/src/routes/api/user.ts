@@ -31,15 +31,8 @@ app.on('HEAD', '/', async (c) => {
   const userExists = await UserRepository.checkUserExists(uuid);
 
   if (userExists) {
-    return c.json(
-      createResponse({
-        success: true,
-        detail: 'User exists',
-        data: {
-          uuid,
-        },
-      })
-    );
+    c.status(200);
+    return c.body(null);
   } else {
     throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
   }
@@ -81,7 +74,7 @@ app.get('/', async (c) => {
 
 // new user creation
 app.post('/', async (c) => {
-  const { config, password } = await c.req.json();
+  const { config, password } = c.get('parsedBody') || (await c.req.json());
   if (!config || !password) {
     throw new APIError(
       constants.ErrorCode.MISSING_REQUIRED_FIELDS,
@@ -109,7 +102,7 @@ app.post('/', async (c) => {
 
 // updating user details
 app.put('/', async (c) => {
-  const body = await c.req.json();
+  const body = c.get('parsedBody') || (await c.req.json());
   const uuid = c.get('uuid') || body.uuid;
   const { password, config } = body;
 
@@ -121,8 +114,10 @@ app.put('/', async (c) => {
     );
   }
 
-  config.uuid = uuid;
-  const updatedUser = await UserRepository.updateUser(uuid, password, config);
+  const updatedUser = await UserRepository.updateUser(uuid, password, {
+    ...config,
+    uuid,
+  });
   return c.json(
     createResponse({
       success: true,
@@ -136,7 +131,7 @@ app.put('/', async (c) => {
 });
 
 app.delete('/', async (c) => {
-  const body = await c.req.json();
+  const body = c.get('parsedBody') || (await c.req.json());
   const uuid = c.get('uuid') || body.uuid;
   const { password } = body;
 

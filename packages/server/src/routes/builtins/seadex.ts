@@ -22,14 +22,14 @@ app.get('/:encodedConfig/manifest.json', async (c) => {
 app.get('/:encodedConfig/stream/:type/:id', async (c) => {
   const encodedConfig = c.req.param('encodedConfig');
   const type = c.req.param('type');
-  const id = c.req.param('id').replace('.json', '');
+  const id = c.req.param('id').replace(/\.json$/, '');
   try {
     const config = encodedConfig
       ? JSON.parse(fromUrlSafeBase64(encodedConfig))
       : undefined;
     const streams = await new SeaDexAddon(config, c.get('userIp')).getStreams(
       type,
-      id!
+      id
     );
     return c.json({ streams });
   } catch (error) {
