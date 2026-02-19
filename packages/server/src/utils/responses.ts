@@ -1,6 +1,3 @@
-import { createLogger } from '@aiostreams/core';
-const logger = createLogger('server');
-
 type ApiResponseOptions = {
   success: boolean;
   detail?: string;

@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
-import { SeaDexAddon, fromUrlSafeBase64 } from '@aiostreams/core';
-import { createLogger } from '@aiostreams/core';
+import { createLogger, SeaDexAddon, fromUrlSafeBase64 } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
 const app = new Hono<HonoEnv>();

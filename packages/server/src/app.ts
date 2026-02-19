@@ -51,10 +51,13 @@ import {
   staticRateLimiter,
   internalMiddleware,
   stremioStreamRateLimiter,
+  stremioCatalogRateLimiter,
+  stremioManifestRateLimiter,
+  stremioSubtitleRateLimiter,
+  stremioMetaRateLimiter,
 } from './middlewares/index.js';
 
-import { constants, createLogger, Env } from '@aiostreams/core';
-import { StremioTransformer } from '@aiostreams/core';
+import { constants, createLogger, Env, StremioTransformer } from '@aiostreams/core';
 import { createResponse } from './utils/responses.js';
 import path from 'path';
 import fs from 'fs';
@@ -114,10 +117,10 @@ const stremio = new Hono<HonoEnv>();
 stremio.use('*', corsMiddleware);
 
 // Public routes
-stremio.get('/manifest.json', manifest);
-stremio.get('/stream/:type/:id', stream);
-stremio.get('/configure', configure);
-stremio.get('/configure.txt', (c) => {
+stremio.get('/manifest.json', stremioManifestRateLimiter, manifest);
+stremio.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
+stremio.get('/configure', staticRateLimiter, configure);
+stremio.get('/configure.txt', staticRateLimiter, (c) => {
   return c.body(fs.readFileSync(path.join(frontendRoot, 'index.txt'), 'utf-8'));
 });
 stremio.get('/u/:alias', alias);
@@ -127,16 +130,16 @@ const stremioAuth = new Hono<HonoEnv>();
 stremioAuth.use('*', corsMiddleware);
 stremioAuth.use('*', userDataMiddleware);
 
-stremioAuth.get('/manifest.json', manifest);
-stremioAuth.get('/stream/:type/:id', stream);
-stremioAuth.get('/configure', configure);
+stremioAuth.get('/manifest.json', stremioManifestRateLimiter, manifest);
+stremioAuth.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
+stremioAuth.get('/configure', staticRateLimiter, configure);
 stremioAuth.get('/configure.txt', staticRateLimiter, (c) => {
   return c.body(fs.readFileSync(path.join(frontendRoot, 'index.txt'), 'utf-8'));
 });
-stremioAuth.get('/meta/:type/:id', meta);
-stremioAuth.get('/catalog/:type/:id/:extra?', catalog);
-stremioAuth.get('/subtitles/:type/:id/:extra?', subtitle);
-stremioAuth.get('/addon_catalog/:type/:id/:extra?', addonCatalog);
+stremioAuth.get('/meta/:type/:id', stremioMetaRateLimiter, meta);
+stremioAuth.get('/catalog/:type/:id/:extra?', stremioCatalogRateLimiter, catalog);
+stremioAuth.get('/subtitles/:type/:id/:extra?', stremioSubtitleRateLimiter, subtitle);
+stremioAuth.get('/addon_catalog/:type/:id/:extra?', stremioCatalogRateLimiter, addonCatalog);
 
 app.route('/stremio', stremio);
 app.route('/stremio/:uuid/:encryptedPassword', stremioAuth);
@@ -184,6 +187,7 @@ app.get('/logo.png', staticRateLimiter, (c) => {
 // serve static from frontendRoot
 app.use(
   '/*',
+  staticRateLimiter,
   serveStatic({
     root: path.relative(process.cwd(), frontendRoot),
   })

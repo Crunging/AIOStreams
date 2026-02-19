@@ -2,12 +2,11 @@ import {
   AIOStreams,
   APIError,
   constants,
+  createLogger,
   Env,
+  Manifest,
   UserData,
 } from '@aiostreams/core';
-import { Manifest } from '@aiostreams/core';
-import { createLogger } from '@aiostreams/core';
-import { stremioManifestRateLimiter } from '../../middlewares/ratelimit.js';
 import { HonoEnv } from '../../types.js';
 import { Context } from 'hono';
 

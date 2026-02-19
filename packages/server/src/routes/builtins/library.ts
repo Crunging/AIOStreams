@@ -8,8 +8,8 @@ import {
   BuiltinServiceId,
   constants,
   Cache,
+  createLogger,
 } from '@aiostreams/core';
-import { createLogger } from '@aiostreams/core';
 import { StaticFiles } from '../../app.js';
 import { HonoEnv } from '../../types.js';
 
