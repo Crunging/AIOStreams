@@ -1,18 +1,29 @@
-import { MiddlewareHandler } from 'hono';
+
 import {
   Env,
   createLogger,
   constants,
   APIError,
-  Cache,
-  REDIS_PREFIX,
   StremioTransformer,
 } from '@aiostreams/core';
-import { HonoEnv } from '../types.js';
+import { rateLimiter, RedisStore } from 'hono-rate-limiter';
+import { createClient } from 'redis';
+import { getConnInfo } from '@hono/node-server/conninfo';
 
 const logger = createLogger('server');
 
-// Simplified rate limiter for Hono using Hono's built-in memory or custom storage
+// Create a single Redis client for rate limiting if configured
+let redisClient: ReturnType<typeof createClient> | undefined;
+
+if (Env.REDIS_URI && !Env.DISABLE_RATE_LIMITS) {
+  redisClient = createClient({
+    url: Env.REDIS_URI,
+  });
+  redisClient.connect().catch((err) => {
+    logger.error('Failed to connect to Redis for rate limiting:', err);
+  });
+}
+
 const createRateLimiter = (
   windowMs: number,
   maxRequests: number,
@@ -22,27 +33,26 @@ const createRateLimiter = (
     return async (c: any, next: any) => await next();
   }
 
-  // Very basic in-memory rate limiter for now, 
-  // in production we should use a proper Hono rate limiter package or custom Redis implementation
-  const memoryStore = new Map<string, { count: number; resetTime: number }>();
-
-  return async (c: any, next: any) => {
-    const ip = c.get('requestIp') || c.get('userIp') || 'unknown';
-    const key = `${prefix}:${ip}`;
-    const now = Date.now();
-    
-    let record = memoryStore.get(key);
-    if (!record || now > record.resetTime) {
-      record = { count: 0, resetTime: now + windowMs };
-    }
-    
-    record.count++;
-    memoryStore.set(key, record);
-
-    if (record.count > maxRequests) {
-      const timeRemaining = record.resetTime - now;
+  return rateLimiter({
+    windowMs,
+    limit: maxRequests,
+    standardHeaders: 'draft-6',
+    keyGenerator: (c) => {
+      const info = getConnInfo(c);
+      const ip = info.remote.address || 'unknown';
+      return `${prefix}:${ip}`;
+    },
+    store: redisClient
+      ? (new RedisStore({
+          client: redisClient as any,
+          prefix: `aiostreams:ratelimit:${prefix}:`,
+        }) as any)
+      : undefined, // undefined falls back to MemoryStore
+    handler: (c) => {
+      const info = getConnInfo(c);
+      const ip = info.remote.address || 'unknown';
       logger.warn(
-        `${prefix} rate limit exceeded for IP: ${ip} - Time remaining: ${timeRemaining}ms`
+        `${prefix} rate limit exceeded for IP: ${ip}`
       );
       
       const stremioResourceRequestRegex =
@@ -59,13 +69,10 @@ const createRateLimiter = (
       }
       
       throw new APIError(constants.ErrorCode.RATE_LIMIT_EXCEEDED);
-    }
-    
-    await next();
-  };
+    },
+  });
 };
 
-// ... (exports remain the same, just created with the new function)
 export const userApiRateLimiter = createRateLimiter(
   Env.USER_API_RATE_LIMIT_WINDOW * 1000,
   Env.USER_API_RATE_LIMIT_MAX_REQUESTS,
