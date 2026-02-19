@@ -1,7 +1,6 @@
 import { Context } from 'hono';
 import {
   AIOStreams,
-  SubtitleResponse,
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
@@ -30,13 +29,11 @@ export const subtitle = async (c: Context<HonoEnv>) => {
       id = id.replace(/\.json$/, '');
     }
 
-    return c.json(
-      transformer.transformSubtitles(
-        await (
-          await new AIOStreams(userData).initialise()
-        ).getSubtitles(type, id, extra)
-      )
-    );
+    const aiostreams = new AIOStreams(userData);
+    await aiostreams.initialise();
+    const subtitles = await aiostreams.getSubtitles(type, id, extra);
+
+    return c.json(transformer.transformSubtitles(subtitles));
   } catch (error) {
     let errorMessage =
       error instanceof Error ? error.message : 'Unknown error';

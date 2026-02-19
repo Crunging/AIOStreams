@@ -85,13 +85,23 @@ function createDummyFormatterContext(
 }
 
 app.post('/', async (c) => {
-  const { stream, context } = await c.req.json();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch (error: any) {
+    throw new APIError(
+      constants.ErrorCode.BAD_REQUEST,
+      400,
+      'Invalid JSON body'
+    );
+  }
+  const { stream, context } = body as { stream: unknown; context?: unknown };
 
   const {
     success: userDataSuccess,
     error: userDataError,
     data: userDataData,
-  } = UserDataSchema.safeParse(context?.userData);
+  } = UserDataSchema.safeParse((context as any)?.userData);
   if (!userDataSuccess) {
     logger.error('Invalid user data', { error: userDataError });
     throw new APIError(

@@ -17,11 +17,18 @@ const ipv4ToLong = (ip: string) =>
   ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
 
 const ipv6ToBigInt = (ip: string): bigint => {
-  const expanded = ip.includes('::')
-    ? ip.replace('::', ':' + '0:'.repeat(8 - ip.split(':').filter(Boolean).length))
-    : ip;
-  
-  return expanded.split(':').reduce(
+  const [left, right] = ip.split('::');
+  const leftParts = left ? left.split(':') : [];
+  const rightParts = right ? right.split(':') : [];
+  const fullParts = ip.includes('::')
+    ? [
+        ...leftParts,
+        ...Array(8 - (leftParts.length + rightParts.length)).fill('0'),
+        ...rightParts,
+      ]
+    : ip.split(':');
+
+  return fullParts.reduce(
     (acc, hex) => (acc << 16n) + BigInt(parseInt(hex || '0', 16)),
     0n
   );
@@ -60,8 +67,9 @@ const isPrivateIp = (ip?: string) => {
   if (!ip) {
     return false;
   }
-  return /^(10\.|(::ffff:)?127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1)/.test(
-    ip
+  const normalized = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  return /^(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1)/.test(
+    normalized
   );
 };
 

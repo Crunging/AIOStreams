@@ -1,7 +1,6 @@
 import { Context } from 'hono';
 import {
   AIOStreams,
-  MetaResponse,
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
@@ -25,7 +24,6 @@ export const meta = async (c: Context<HonoEnv>) => {
     logger.debug('Meta request received', {
       type,
       id,
-      userData,
     });
 
     if (id.startsWith('aiostreamserror.')) {
@@ -62,6 +60,16 @@ export const meta = async (c: Context<HonoEnv>) => {
     }
     return c.json(transformed);
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errors = [{ description: errorMessage }];
+    if (transformer.showError('meta', errors)) {
+      logger.error(`Error in meta route: ${errorMessage}`);
+      return c.json({
+        meta: StremioTransformer.createErrorMeta({
+          errorDescription: errorMessage,
+        }),
+      });
+    }
     logger.error('Error in meta route:', error);
     throw error;
   }
