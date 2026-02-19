@@ -14,7 +14,12 @@ const logger = createLogger('server');
 // Create a single Redis client for rate limiting if configured
 let redisClient: ReturnType<typeof createClient> | undefined;
 
-if (Env.REDIS_URI && !Env.DISABLE_RATE_LIMITS) {
+
+if (
+  Env.REDIS_URI &&
+  Env.RATE_LIMIT_STORE === 'redis' &&
+  !Env.DISABLE_RATE_LIMITS
+) {
   redisClient = createClient({
     url: Env.REDIS_URI,
   });
