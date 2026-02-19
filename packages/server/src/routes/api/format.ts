@@ -33,6 +33,7 @@ const FormatterContextSchema = z.object({
   yearEnd: z.number().optional(),
   genres: z.array(z.string()).optional(),
   runtime: z.number().optional(),
+  episodeRuntime: z.number().optional(),
   absoluteEpisode: z.number().optional(),
   relativeAbsoluteEpisode: z.number().optional(),
   originalLanguage: z.string().optional(),
@@ -95,13 +96,16 @@ app.post('/', async (c) => {
       'Invalid JSON body'
     );
   }
-  const { stream, context } = body as { stream: unknown; context?: unknown };
+  const { stream, context: clientContext } = body as {
+    stream: unknown;
+    context?: unknown;
+  };
 
   const {
     success: userDataSuccess,
     error: userDataError,
     data: userDataData,
-  } = UserDataSchema.safeParse((context as any)?.userData);
+  } = UserDataSchema.safeParse((clientContext as any)?.userData);
   if (!userDataSuccess) {
     logger.error('Invalid user data', { error: userDataError });
     throw new APIError(
@@ -113,12 +117,12 @@ app.post('/', async (c) => {
 
   // Parse optional formatter context
   let contextOverrides: Partial<FormatterContext> = {};
-  if (context) {
+  if (clientContext) {
     const {
       success: contextSuccess,
       error: contextError,
       data: contextData,
-    } = FormatterContextSchema.safeParse(context);
+    } = FormatterContextSchema.safeParse(clientContext);
     if (!contextSuccess) {
       logger.error('Invalid formatter context', { error: contextError });
       throw new APIError(
