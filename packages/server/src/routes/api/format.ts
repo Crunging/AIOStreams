@@ -96,6 +96,13 @@ app.post('/', async (c) => {
       'Invalid JSON body'
     );
   }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new APIError(
+      constants.ErrorCode.BAD_REQUEST,
+      400,
+      'Invalid JSON body'
+    );
+  }
   const { stream, context: clientContext } = body as {
     stream: unknown;
     context?: unknown;

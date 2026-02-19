@@ -193,10 +193,43 @@ app.get('/', async (c) => {
       requiredFields
     );
     if (stremioStreams && format) {
-      apiData.results = apiData.results.map((result, index) => {
-        const stream = stremioStreams[index];
-        if (!stream || ['statistic', 'error'].includes(stream.streamData?.type || '')) {
-            return result;
+      // Create a map of stable identifiers to Stremio streams to prevent index skew
+      const stremioStreamMap = new Map<string, any>();
+
+      stremioStreams.forEach((stream) => {
+        if (
+          !stream ||
+          ['statistic', 'error'].includes(stream.streamData?.type || '')
+        ) {
+          return;
+        }
+
+        // Generate a unique key based on url or infoHash+fileIdx
+        let key: string | undefined;
+        if (stream.url) {
+          key = `url:${stream.url}`;
+        } else if (stream.infoHash) {
+          key = `torrent:${stream.infoHash}:${stream.fileIdx ?? ''}`;
+        }
+
+        if (key) {
+          stremioStreamMap.set(key, stream);
+        }
+      });
+
+      apiData.results = apiData.results.map((result) => {
+        // Generate the same key for the API result
+        let key: string | undefined;
+        if (result.url) {
+          key = `url:${result.url}`;
+        } else if (result.infoHash) {
+          key = `torrent:${result.infoHash}:${result.fileIdx ?? ''}`;
+        }
+
+        const stream = key ? stremioStreamMap.get(key) : null;
+
+        if (!stream) {
+          return result;
         }
         return {
           ...result,

@@ -18,6 +18,9 @@ if (Env.REDIS_URI && !Env.DISABLE_RATE_LIMITS) {
   redisClient = createClient({
     url: Env.REDIS_URI,
   });
+  redisClient.on('error', (err) => {
+    logger.error('Redis client error:', err);
+  });
   redisClient.connect().catch((err) => {
     logger.error('Failed to connect to Redis for rate limiting:', err);
   });
@@ -32,6 +35,17 @@ const createRateLimiter = (
     return async (c: any, next: any) => await next();
   }
 
+  // Redis client adapter to bridge node-redis v5 with hono-rate-limiter
+  const redisClientAdapter = redisClient
+    ? {
+        scriptLoad: (lua: string) => redisClient!.scriptLoad(lua),
+        evalsha: (sha: string, keys: string[], args: unknown[]) =>
+          redisClient!.evalSha(sha, { keys, arguments: args as string[] }),
+        decr: (key: string) => redisClient!.decr(key),
+        del: (key: string) => redisClient!.del(key),
+      }
+    : undefined;
+
   return rateLimiter({
     windowMs,
     limit: maxRequests,
@@ -41,11 +55,11 @@ const createRateLimiter = (
       const ip = info.remote?.address || 'unknown';
       return `${prefix}:${ip}`;
     },
-    store: redisClient
-      ? (new RedisStore({
-          client: redisClient as any,
+    store: redisClientAdapter
+      ? new RedisStore({
+          client: redisClientAdapter as any,
           prefix: `aiostreams:ratelimit:${prefix}:`,
-        }) as any)
+        })
       : undefined, // undefined falls back to MemoryStore
     handler: (c) => {
       const info = getConnInfo(c);
