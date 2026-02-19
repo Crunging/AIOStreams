@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Context, Hono } from 'hono';
 import {
   EasynewsSearchAddon,
   EasynewsApi,
@@ -6,72 +6,59 @@ import {
   EasynewsAuthSchema,
   fromUrlSafeBase64,
   createLogger,
-  formatZodError,
   NzbProxyManager,
   APIError,
   constants,
 } from '@aiostreams/core';
-import { ZodError } from 'zod';
 import { easynewsNzbRateLimiter } from '../../middlewares/index.js';
 import { createResponse } from '../../utils/responses.js';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.get(
-  '/:encodedConfig/manifest.json',
-  async (req: Request, res: Response, next: NextFunction) => {
-    const { encodedConfig } = req.params;
-
-    try {
-      const manifest = new EasynewsSearchAddon(
-        encodedConfig
-          ? JSON.parse(fromUrlSafeBase64(encodedConfig))
-          : undefined,
-        req.userIp
-      ).getManifest();
-      res.json(manifest);
-    } catch (error) {
-      next(error);
-    }
+app.get('/:encodedConfig/manifest.json', async (c) => {
+  const encodedConfig = c.req.param('encodedConfig');
+  try {
+    const manifest = new EasynewsSearchAddon(
+      encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
+      c.get('userIp')
+    ).getManifest();
+    return c.json(manifest);
+  } catch (error) {
+    logger.error('Failed to get easynews manifest:', error);
+    throw error;
   }
-);
+});
 
-router.get(
-  '/:encodedConfig/stream/:type/:id.json',
-  async (req: Request, res: Response, next: NextFunction) => {
-    const { encodedConfig, type, id } = req.params;
-
-    try {
-      const addon = new EasynewsSearchAddon(
-        encodedConfig
-          ? JSON.parse(fromUrlSafeBase64(encodedConfig))
-          : undefined,
-        req.userIp
-      );
-      const streams = await addon.getStreams(type, id);
-      res.json({
-        streams: streams,
-      });
-    } catch (error) {
-      next(error);
-    }
+app.get('/:encodedConfig/stream/:type/:id', async (c) => {
+  const encodedConfig = c.req.param('encodedConfig');
+  const type = c.req.param('type');
+  const id = c.req.param('id').replace('.json', '');
+  try {
+    const addon = new EasynewsSearchAddon(
+      encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
+      c.get('userIp')
+    );
+    const streams = await addon.getStreams(type, id!);
+    return c.json({ streams });
+  } catch (error) {
+    logger.error('Failed to get easynews streams:', error);
+    throw error;
   }
-);
+});
 
 /**
  * NZB endpoint - fetches NZB from Easynews and serves it
  * This endpoint is needed because Easynews requires a POST request to fetch NZBs
  */
-router.get(
-  '/nzb/:encodedAuth/:encodedParams{/:aiostreamsAuth}/:filename.nzb',
+app.get(
+  '/nzb/:encodedAuth/:encodedParams/:aiostreamsAuth?/:filename',
   easynewsNzbRateLimiter,
-  async (req: Request, res: Response, next: NextFunction) => {
-    const {
-      encodedAuth,
-      encodedParams,
-      aiostreamsAuth: encodedAiostreamsAuth,
-    } = req.params;
+  async (c) => {
+    const encodedAuth = c.req.param('encodedAuth');
+    const encodedParams = c.req.param('encodedParams');
+    const encodedAiostreamsAuth = c.req.param('aiostreamsAuth');
 
     try {
       // Decode and validate auth credentials
@@ -81,14 +68,11 @@ router.get(
         auth = EasynewsAuthSchema.parse(JSON.parse(decodedAuth));
       } catch (e) {
         logger.warn('Failed to decode/parse Easynews auth');
-        next(
-          new APIError(
-            constants.ErrorCode.BAD_REQUEST,
-            undefined,
-            'Invalid authentication'
-          )
+        throw new APIError(
+          constants.ErrorCode.BAD_REQUEST,
+          undefined,
+          'Invalid authentication'
         );
-        return;
       }
 
       // Decode and validate NZB params
@@ -99,14 +83,11 @@ router.get(
         );
       } catch (e) {
         logger.warn('Failed to decode/parse NZB params');
-        next(
-          new APIError(
-            constants.ErrorCode.BAD_REQUEST,
-            undefined,
-            'Invalid NZB parameters'
-          )
+        throw new APIError(
+          constants.ErrorCode.BAD_REQUEST,
+          undefined,
+          'Invalid NZB parameters'
         );
-        return;
       }
 
       // Parse optional AIOStreams auth for bypass
@@ -119,7 +100,6 @@ router.get(
             aiostreamsAuth = { username, password };
           }
         } catch (e) {
-          // continue without auth
           logger.debug(
             'Invalid AIOStreams auth in URL, continuing without bypass'
           );
@@ -128,16 +108,16 @@ router.get(
 
       // Check if Easynews NZB proxy is enabled
       if (!NzbProxyManager.isEasynewsProxyEnabled(aiostreamsAuth)) {
-        res.status(503).json(
+        return c.json(
           createResponse({
             error: {
               code: 'NZB_PROXY_DISABLED',
               message: 'Easynews NZB proxying is disabled',
             },
             success: false,
-          })
+          }),
+          503
         );
-        return;
       }
 
       // Check rate limits
@@ -151,14 +131,11 @@ router.get(
           userKey,
           reason: rateLimitCheck.reason,
         });
-        next(
-          new APIError(
-            constants.ErrorCode.RATE_LIMIT_EXCEEDED,
-            undefined,
-            rateLimitCheck.reason || 'Rate limit exceeded'
-          )
+        throw new APIError(
+          constants.ErrorCode.RATE_LIMIT_EXCEEDED,
+          undefined,
+          rateLimitCheck.reason || 'Rate limit exceeded'
         );
-        return;
       }
 
       const api = new EasynewsApi(auth.username, auth.password);
@@ -173,16 +150,16 @@ router.get(
           size: content.length,
           reason: sizeCheck.reason,
         });
-        res.status(413).json(
+        return c.json(
           createResponse({
             error: {
               code: 'NZB_SIZE_LIMIT_EXCEEDED',
               message: sizeCheck.reason || 'NZB size limit exceeded',
             },
             success: false,
-          })
+          }),
+          413
         );
-        return;
       }
 
       if (!rateLimitCheck.authorised) {
@@ -190,22 +167,21 @@ router.get(
       }
 
       // Set headers for NZB download
-      res.setHeader('Content-Type', 'application/x-nzb');
-      res.setHeader(
+      c.header('Content-Type', 'application/x-nzb');
+      c.header(
         'Content-Disposition',
         `attachment; filename="${encodeURIComponent(filename)}"`
       );
-      res.setHeader('Content-Length', content.length);
+      c.header('Content-Length', content.length.toString());
 
-      // Send the NZB content
-      res.send(content);
+      return c.body(content as any);
     } catch (error) {
       logger.error(
         `Failed to fetch NZB: ${error instanceof Error ? error.message : String(error)}`
       );
-      next(error);
+      throw error;
     }
   }
 );
 
-export default router;
+export default app;

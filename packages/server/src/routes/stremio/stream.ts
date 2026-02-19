@@ -1,93 +1,79 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Context } from 'hono';
 import {
   AIOStreams,
   AIOStreamResponse,
   Env,
   createLogger,
   StremioTransformer,
-  Cache,
   IdParser,
 } from '@aiostreams/core';
-import { stremioStreamRateLimiter } from '../../middlewares/ratelimit.js';
-
-const router: Router = Router();
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
 
-router.use(stremioStreamRateLimiter);
+export const stream = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  const requestIp = c.get('requestIp');
+  
+  // Check if we have user data (set by middleware in authenticated routes)
+  if (!userData) {
+    // Return a response indicating configuration is needed
+    return c.json(
+      StremioTransformer.createDynamicError('stream', {
+        errorDescription: 'Please configure the addon first',
+      })
+    );
+  }
+  const transformer = new StremioTransformer(userData);
 
-router.get(
-  '/:type/:id.json',
-  async (
-    req: Request,
-    res: Response<AIOStreamResponse>,
-    next: NextFunction
-  ) => {
-    // Check if we have user data (set by middleware in authenticated routes)
-    if (!req.userData) {
-      // Return a response indicating configuration is needed
-      res.status(200).json(
+  const provideStreamData =
+    Env.PROVIDE_STREAM_DATA !== undefined
+      ? typeof Env.PROVIDE_STREAM_DATA === 'boolean'
+        ? Env.PROVIDE_STREAM_DATA
+        : Env.PROVIDE_STREAM_DATA.includes(requestIp || '')
+      : (c.req.header('user-agent')?.includes('AIOStreams/') ?? false);
+
+  try {
+    const type = c.req.param('type');
+    const id = c.req.param('id').replace('.json', '');
+
+    const aiostreams = await new AIOStreams(userData).initialise();
+
+    const disableAutoplay = await aiostreams.shouldStopAutoPlay(type, id);
+
+    const response = await aiostreams.getStreams(id, type);
+    const streamContext = aiostreams.getStreamContext();
+
+    if (!streamContext) {
+      throw new Error('Stream context not available');
+    }
+
+    return c.json(
+      await transformer.transformStreams(
+        response,
+        streamContext.toFormatterContext(response.data.streams),
+        { provideStreamData, disableAutoplay }
+      )
+    );
+  } catch (error) {
+    let errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    let errors = [
+      {
+        description: errorMessage,
+      },
+    ];
+    if (transformer.showError('stream', errors)) {
+      logger.error(
+        `Unexpected error during stream retrieval: ${errorMessage}`,
+        error
+      );
+      return c.json(
         StremioTransformer.createDynamicError('stream', {
-          errorDescription: 'Please configure the addon first',
+          errorDescription: errorMessage,
         })
       );
-      return;
     }
-    const transformer = new StremioTransformer(req.userData);
-
-    const provideStreamData =
-      Env.PROVIDE_STREAM_DATA !== undefined
-        ? typeof Env.PROVIDE_STREAM_DATA === 'boolean'
-          ? Env.PROVIDE_STREAM_DATA
-          : Env.PROVIDE_STREAM_DATA.includes(req.requestIp || '')
-        : (req.headers['user-agent']?.includes('AIOStreams/') ?? false);
-
-    try {
-      const { type, id } = req.params;
-
-      const aiostreams = await new AIOStreams(req.userData).initialise();
-
-      const disableAutoplay = await aiostreams.shouldStopAutoPlay(type, id);
-
-      const response = await aiostreams.getStreams(id, type);
-      const streamContext = aiostreams.getStreamContext();
-
-      if (!streamContext) {
-        throw new Error('Stream context not available');
-      }
-
-      res
-        .status(200)
-        .json(
-          await transformer.transformStreams(
-            response,
-            streamContext.toFormatterContext(response.data.streams),
-            { provideStreamData, disableAutoplay }
-          )
-        );
-    } catch (error) {
-      let errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      let errors = [
-        {
-          description: errorMessage,
-        },
-      ];
-      if (transformer.showError('stream', errors)) {
-        logger.error(
-          `Unexpected error during stream retrieval: ${errorMessage}`,
-          error
-        );
-        res.status(200).json(
-          StremioTransformer.createDynamicError('stream', {
-            errorDescription: errorMessage,
-          })
-        );
-        return;
-      }
-      next(error);
-    }
+    throw error;
   }
-);
-
-export default router;
+};

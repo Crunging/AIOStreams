@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Context } from 'hono';
 import {
   AIOStreams,
   APIError,
@@ -8,12 +8,9 @@ import {
 } from '@aiostreams/core';
 import { Manifest } from '@aiostreams/core';
 import { createLogger } from '@aiostreams/core';
-import { stremioManifestRateLimiter } from '../../middlewares/ratelimit.js';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
-
-router.use(stremioManifestRateLimiter);
 
 interface ChillLinkManifest {
   id: string;
@@ -26,7 +23,7 @@ interface ChillLinkManifest {
   };
 }
 
-const manifest = async (config?: UserData): Promise<ChillLinkManifest> => {
+const getManifest = async (config?: UserData): Promise<ChillLinkManifest> => {
   let addonId = Env.ADDON_ID;
   if (config) {
     addonId += `.${config.uuid?.substring(0, 12)}`;
@@ -57,21 +54,13 @@ const manifest = async (config?: UserData): Promise<ChillLinkManifest> => {
   };
 };
 
-router.get(
-  '/',
-  async (
-    req: Request,
-    res: Response<ChillLinkManifest>,
-    next: NextFunction
-  ) => {
-    logger.debug('Manifest request received', { userData: req.userData });
-    try {
-      res.status(200).json(await manifest(req.userData));
-    } catch (error) {
-      logger.error(`Failed to generate manifest: ${error}`);
-      next(new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR));
-    }
+export const manifest = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  logger.debug('Manifest request received', { userData });
+  try {
+    return c.json(await getManifest(userData));
+  } catch (error) {
+    logger.error(`Failed to generate manifest: ${error}`);
+    throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR);
   }
-);
-
-export default router;
+};

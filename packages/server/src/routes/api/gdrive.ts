@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   APIError,
@@ -6,13 +6,14 @@ import {
   createLogger,
   GoogleOAuth,
 } from '@aiostreams/core';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+app.post('/', async (c) => {
   try {
-    const { code } = req.body;
+    const { code } = await c.req.json();
     if (!code) {
       throw new APIError(
         constants.ErrorCode.BAD_REQUEST,
@@ -22,7 +23,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
     const { access_token, refresh_token } =
       await GoogleOAuth.exchangeAuthorisationCode(code);
-    res.status(200).json(
+    return c.json(
       createResponse({
         success: true,
         data: {
@@ -33,14 +34,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     );
   } catch (error: any) {
     logger.error(`GDrive authorisation failed: ${error.message}`);
-    next(
-      new APIError(
-        constants.ErrorCode.INTERNAL_SERVER_ERROR,
-        undefined,
-        error.message
-      )
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      undefined,
+      error.message
     );
   }
 });
 
-export default router;
+export default app;

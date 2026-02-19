@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   createLogger,
@@ -12,12 +12,12 @@ import {
 } from '@aiostreams/core';
 import { formatApiRateLimiter } from '../../middlewares/ratelimit.js';
 import z from 'zod';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
-
-router.use(formatApiRateLimiter);
-
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
+
+app.use('*', formatApiRateLimiter);
 
 // Schema for the formatter context that can be sent from the client
 const FormatterContextSchema = z.object({
@@ -84,8 +84,8 @@ function createDummyFormatterContext(
   };
 }
 
-router.post('/', async (req: Request, res: Response) => {
-  const { stream, context } = req.body;
+app.post('/', async (c) => {
+  const { stream, context } = await c.req.json();
 
   const {
     success: userDataSuccess,
@@ -117,7 +117,7 @@ router.post('/', async (req: Request, res: Response) => {
         formatZodError(contextError)
       );
     }
-    contextOverrides = contextData;
+    contextOverrides = contextData as Partial<FormatterContext>;
   }
 
   const formatterContext = createDummyFormatterContext(
@@ -140,9 +140,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
   }
   const formattedStream = await formatter.format(streamData);
-  res
-    .status(200)
-    .json(createResponse({ success: true, data: formattedStream }));
+  return c.json(createResponse({ success: true, data: formattedStream }));
 });
 
-export default router;
+export default app;

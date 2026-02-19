@@ -1,6 +1,8 @@
-import { Request, Response, NextFunction } from 'express';
+import { MiddlewareHandler } from 'hono';
 import { createLogger, Env } from '@aiostreams/core';
 import { isIP } from 'net';
+import { HonoEnv } from '../types.js';
+import { getConnInfo } from '@hono/node-server/conninfo';
 
 const logger = createLogger('server');
 
@@ -41,54 +43,57 @@ const isPrivateIp = (ip?: string) => {
   );
 };
 
-export const ipMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const getIpFromHeaders = (req: Request) => {
+export const ipMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
+  const getIpFromHeaders = () => {
     return (
-      req.get('X-Client-IP') ||
-      req.get('X-Forwarded-For')?.split(',')[0].trim() ||
-      req.get('X-Real-IP') ||
-      req.get('CF-Connecting-IP') ||
-      req.get('True-Client-IP') ||
-      req.get('X-Forwarded')?.split(',')[0].trim() ||
-      req.get('Forwarded-For')?.split(',')[0].trim() ||
-      req.ip
+      c.req.header('X-Client-IP') ||
+      c.req.header('X-Forwarded-For')?.split(',')[0].trim() ||
+      c.req.header('X-Real-IP') ||
+      c.req.header('CF-Connecting-IP') ||
+      c.req.header('True-Client-IP') ||
+      c.req.header('X-Forwarded')?.split(',')[0].trim() ||
+      c.req.header('Forwarded-For')?.split(',')[0].trim() ||
+      undefined // Hono will provide the connection IP if needed elsewhere
     );
   };
+  
+  // Use getConnInfo to get the remote address from the underlying node request
+  const connInfo = getConnInfo(c);
+  const connIp = connInfo.remote.address || '';
+
   if (Env.LOG_SENSITIVE_INFO) {
     const headers = {
-      'X-Client-IP': req.get('X-Client-IP'),
-      'X-Forwarded-For': req.get('X-Forwarded-For'),
-      'X-Real-IP': req.get('X-Real-IP'),
-      'CF-Connecting-IP': req.get('CF-Connecting-IP'),
-      'True-Client-IP': req.get('True-Client-IP'),
-      'X-Forwarded': req.get('X-Forwarded'),
-      'Forwarded-For': req.get('Forwarded-For'),
-      ip: req.ip,
+      'X-Client-IP': c.req.header('X-Client-IP'),
+      'X-Forwarded-For': c.req.header('X-Forwarded-For'),
+      'X-Real-IP': c.req.header('X-Real-IP'),
+      'CF-Connecting-IP': c.req.header('CF-Connecting-IP'),
+      'True-Client-IP': c.req.header('True-Client-IP'),
+      'X-Forwarded': c.req.header('X-Forwarded'),
+      'Forwarded-For': c.req.header('Forwarded-For'),
+      ip: connIp,
     };
     logger.debug(
       `Determining user IP based on headers: ${JSON.stringify(headers)}`
     );
   }
-  const userIp = getIpFromHeaders(req);
-  const ip = req.ip || '';
+  const userIp = getIpFromHeaders() || connIp;
+  const ip = connIp;
   const trustedIps = Env.TRUSTED_IPS || [];
 
   const isTrustedIp = trustedIps.some((range) => isIpInRange(ip, range));
   if (Env.LOG_SENSITIVE_INFO) {
     logger.debug(
-      `Determining request IP based on headers: x-forwarded-for: ${req.get('X-Forwarded-For')}, cf-connecting-ip: ${req.get('CF-Connecting-IP')}, ip: ${ip}`
+      `Determining request IP based on headers: x-forwarded-for: ${c.req.header('X-Forwarded-For')}, cf-connecting-ip: ${c.req.header('CF-Connecting-IP')}, ip: ${ip}`
     );
   }
   const requestIp = isTrustedIp
-    ? req.get('X-Forwarded-For')?.split(',')[0].trim() ||
-      req.get('CF-Connecting-IP') ||
+    ? c.req.header('X-Forwarded-For')?.split(',')[0].trim() ||
+      c.req.header('CF-Connecting-IP') ||
       ip
     : ip;
-  req.userIp = isPrivateIp(userIp) || !isValidIp(userIp) ? undefined : userIp;
-  req.requestIp = isValidIp(requestIp) ? requestIp : undefined;
-  next();
+  
+  c.set('userIp', isPrivateIp(userIp) || !isValidIp(userIp) ? undefined : userIp);
+  c.set('requestIp', isValidIp(requestIp) ? requestIp : undefined);
+  
+  await next();
 };

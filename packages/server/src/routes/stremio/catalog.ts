@@ -1,65 +1,62 @@
-import { Router, Request, Response } from 'express';
+import { Context } from 'hono';
 import {
   AIOStreams,
   CatalogResponse,
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
-import { stremioCatalogRateLimiter } from '../../middlewares/ratelimit.js';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-router.use(stremioCatalogRateLimiter);
+export const catalog = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  const transformer = new StremioTransformer(userData!);
+  if (!userData) {
+    return c.json(
+      transformer.transformCatalog({
+        success: false,
+        data: [],
+        errors: [{ description: 'Please configure the addon first' }],
+      })
+    );
+  }
 
-router.get(
-  '/:type/:id{/:extras}.json',
-  async (req: Request, res: Response<CatalogResponse>, next) => {
-    const transformer = new StremioTransformer(req.userData);
-    if (!req.userData) {
-      res.status(200).json(
+  try {
+    const type = c.req.param('type');
+    let id = c.req.param('id');
+    let extra = c.req.param('extra');
+
+    if (extra) {
+      extra = extra.replace('.json', '');
+    } else {
+      id = id.replace('.json', '');
+    }
+
+    return c.json(
+      transformer.transformCatalog(
+        await (
+          await new AIOStreams(userData).initialise()
+        ).getCatalog(type, id, extra)
+      )
+    );
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errors = [
+      {
+        description: errorMsg,
+      },
+    ];
+    if (transformer.showError('catalog', errors)) {
+      logger.error(`Unexpected error during catalog retrieval: ${errorMsg}`);
+      return c.json(
         transformer.transformCatalog({
           success: false,
           data: [],
-          errors: [{ description: 'Please configure the addon first' }],
+          errors,
         })
       );
-      return;
     }
-
-    try {
-      const { type, id, extras } = req.params;
-
-      res
-        .status(200)
-        .json(
-          transformer.transformCatalog(
-            await (
-              await new AIOStreams(req.userData).initialise()
-            ).getCatalog(type, id, extras)
-          )
-        );
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const errors = [
-        {
-          description: errorMsg,
-        },
-      ];
-      if (transformer.showError('catalog', errors)) {
-        logger.error(`Unexpected error during catalog retrieval: ${errorMsg}`);
-        res.status(200).json(
-          transformer.transformCatalog({
-            success: false,
-            data: [],
-            errors,
-          })
-        );
-        return;
-      }
-      next(error);
-    }
+    throw error;
   }
-);
-
-export default router;
+};

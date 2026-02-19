@@ -1,69 +1,62 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Context } from 'hono';
 import {
   AIOStreams,
   MetaResponse,
   createLogger,
   StremioTransformer,
+  APIError,
+  constants,
 } from '@aiostreams/core';
-
-import { stremioMetaRateLimiter } from '../../middlewares/ratelimit.js';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-router.use(stremioMetaRateLimiter);
-
-router.get(
-  '/:type/:id.json',
-  async (req: Request, res: Response<MetaResponse>, next: NextFunction) => {
-    if (!req.userData) {
-      res.status(200).json({
-        meta: StremioTransformer.createErrorMeta({
-          errorDescription: 'Please configure the addon first',
-        }),
-      });
-      return;
-    }
-    const transformer = new StremioTransformer(req.userData);
-    try {
-      const { type, id } = req.params;
-      logger.debug('Meta request received', {
-        type,
-        id,
-        userData: req.userData,
-      });
-
-      if (id.startsWith('aiostreamserror.')) {
-        res.status(200).json({
-          meta: StremioTransformer.createErrorMeta(
-            JSON.parse(decodeURIComponent(id.split('.').slice(1).join('.')))
-          ),
-        });
-        return;
-      }
-
-      const aiostreams = new AIOStreams(req.userData);
-      await aiostreams.initialise();
-
-      const meta = await aiostreams.getMeta(type, id);
-      const streamContext = aiostreams.getStreamContext();
-
-      const transformed = await transformer.transformMeta(
-        meta,
-        streamContext?.toFormatterContext(),
-        {
-          provideStreamData: true,
-        }
-      );
-      if (!transformed) {
-        next();
-      } else {
-        res.status(200).json(transformed);
-      }
-    } catch (error) {
-      next(error);
-    }
+export const meta = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  if (!userData) {
+    return c.json({
+      meta: StremioTransformer.createErrorMeta({
+        errorDescription: 'Please configure the addon first',
+      }),
+    });
   }
-);
+  const transformer = new StremioTransformer(userData);
+  try {
+    const type = c.req.param('type');
+    const id = c.req.param('id').replace('.json', '');
+    logger.debug('Meta request received', {
+      type,
+      id,
+      userData,
+    });
 
-export default router;
+    if (id.startsWith('aiostreamserror.')) {
+      return c.json({
+        meta: StremioTransformer.createErrorMeta(
+          JSON.parse(decodeURIComponent(id.split('.').slice(1).join('.')))
+        ),
+      });
+    }
+
+    const aiostreams = new AIOStreams(userData);
+    await aiostreams.initialise();
+
+    const meta = await aiostreams.getMeta(type, id);
+    const streamContext = aiostreams.getStreamContext();
+
+    const transformed = await transformer.transformMeta(
+      meta,
+      streamContext?.toFormatterContext(),
+      {
+        provideStreamData: true,
+      }
+    );
+    if (!transformed) {
+      return c.notFound();
+    }
+    return c.json(transformed);
+  } catch (error) {
+    logger.error('Error in meta route:', error);
+    throw error;
+  }
+};

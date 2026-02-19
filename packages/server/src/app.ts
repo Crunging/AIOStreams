@@ -1,4 +1,5 @@
-import express, { Request, Response, Express } from 'express';
+import { Hono } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
 import {
   userApi,
   healthApi,
@@ -58,7 +59,9 @@ import { createResponse } from './utils/responses.js';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-const app: Express = express();
+import { HonoEnv } from './types.js';
+
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
 export enum StaticFiles {
@@ -82,182 +85,166 @@ const __dirname = path.dirname(__filename);
 export const frontendRoot = path.join(__dirname, '../../frontend/out');
 export const staticRoot = path.join(__dirname, './static');
 
-app.use(ipMiddleware);
-app.use(loggerMiddleware);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Allow all origins in development for easier testing
-if (Env.NODE_ENV === 'development') {
-  logger.info('CORS enabled for all origins in development');
-  app.use(corsMiddleware);
-}
+// Middlewares
+app.use('*', ipMiddleware);
+app.use('*', loggerMiddleware);
 
 // API Routes
-const apiRouter = express.Router();
-apiRouter.use('/user', userApi);
-apiRouter.use('/health', healthApi);
-apiRouter.use('/status', statusApi);
-apiRouter.use('/format', formatApi);
-apiRouter.use('/catalogs', catalogApi);
-apiRouter.use('/posters', postersApi);
-apiRouter.use('/oauth/exchange/gdrive', gdriveApi);
-apiRouter.use('/debrid', debridApi);
+const api = new Hono<HonoEnv>();
+api.route('/user', userApi);
+api.route('/health', healthApi);
+api.route('/status', statusApi);
+api.route('/format', formatApi);
+api.route('/catalogs', catalogApi);
+api.route('/posters', postersApi);
+api.route('/oauth/exchange/gdrive', gdriveApi);
+api.route('/debrid', debridApi);
 if (Env.ENABLE_SEARCH_API) {
-  apiRouter.use('/search', searchApi);
+  api.route('/search', searchApi);
 }
-apiRouter.use('/anime', animeApi);
-apiRouter.use('/proxy', proxyApi);
-apiRouter.use('/templates', templatesApi);
-apiRouter.use('/sync', syncApi);
-app.use(`/api/v${constants.API_VERSION}`, apiRouter);
+api.route('/anime', animeApi);
+api.route('/proxy', proxyApi);
+api.route('/templates', templatesApi);
+api.route('/sync', syncApi);
+
+app.route(`/api/v${constants.API_VERSION}`, api);
 
 // Stremio Routes
-const stremioRouter = express.Router({ mergeParams: true });
-stremioRouter.use(corsMiddleware);
-// Public routes - no auth needed
-stremioRouter.use('/manifest.json', manifest);
-stremioRouter.use('/stream', stream);
-stremioRouter.use('/configure', configure);
-stremioRouter.use('/configure.txt', (req, res) => {
-  res.sendFile(path.join(frontendRoot, 'index.txt'));
+const stremio = new Hono<HonoEnv>();
+stremio.use('*', corsMiddleware);
+
+// Public routes
+stremio.get('/manifest.json', manifest);
+stremio.get('/stream/:type/:id', stream);
+stremio.get('/configure', configure);
+stremio.get('/configure.txt', (c) => {
+  return c.body(fs.readFileSync(path.join(frontendRoot, 'index.txt'), 'utf-8'));
 });
+stremio.get('/u/:alias', alias);
 
-stremioRouter.use('/u', alias);
+// Authenticated routes
+const stremioAuth = new Hono<HonoEnv>();
+stremioAuth.use('*', corsMiddleware);
+stremioAuth.use('*', userDataMiddleware);
 
-// Protected routes with authentication
-const stremioAuthRouter = express.Router({ mergeParams: true });
-stremioAuthRouter.use(corsMiddleware);
-stremioAuthRouter.use(userDataMiddleware);
-stremioAuthRouter.use('/manifest.json', manifest);
-stremioAuthRouter.use('/stream', stream);
-stremioAuthRouter.use('/configure', configure);
-stremioAuthRouter.use('/configure.txt', staticRateLimiter, (req, res) => {
-  res.sendFile(path.join(frontendRoot, 'index.txt'));
+stremioAuth.get('/manifest.json', manifest);
+stremioAuth.get('/stream/:type/:id', stream);
+stremioAuth.get('/configure', configure);
+stremioAuth.get('/configure.txt', staticRateLimiter, (c) => {
+  return c.body(fs.readFileSync(path.join(frontendRoot, 'index.txt'), 'utf-8'));
 });
-stremioAuthRouter.use('/meta', meta);
-stremioAuthRouter.use('/catalog', catalog);
-stremioAuthRouter.use('/subtitles', subtitle);
-stremioAuthRouter.use('/addon_catalog', addonCatalog);
+stremioAuth.get('/meta/:type/:id', meta);
+stremioAuth.get('/catalog/:type/:id/:extra?', catalog);
+stremioAuth.get('/subtitles/:type/:id/:extra?', subtitle);
+stremioAuth.get('/addon_catalog/:type/:id/:extra?', addonCatalog);
 
-app.use('/stremio', stremioRouter); // For public routes
-app.use('/stremio/:uuid/:encryptedPassword', stremioAuthRouter); // For authenticated routes
+app.route('/stremio', stremio);
+app.route('/stremio/:uuid/:encryptedPassword', stremioAuth);
 
-const chillLinkRouter = express.Router({ mergeParams: true });
-chillLinkRouter.use(corsMiddleware);
-chillLinkRouter.use(userDataMiddleware);
-chillLinkRouter.use('/manifest', chillLinkManifest);
-chillLinkRouter.use('/streams', chillLinkStreams);
+// ChillLink Routes
+const chillLink = new Hono<HonoEnv>();
+chillLink.use('*', corsMiddleware);
+chillLink.use('*', userDataMiddleware);
+chillLink.get('/manifest', chillLinkManifest);
+chillLink.get('/streams/:type/:id', chillLinkStreams);
 
-app.use('/chilllink/:uuid/:encryptedPassword', chillLinkRouter);
+app.route('/chilllink/:uuid/:encryptedPassword', chillLink);
 
-const builtinsRouter = express.Router();
-builtinsRouter.use(internalMiddleware);
-builtinsRouter.use('/gdrive', gdrive);
-builtinsRouter.use('/torbox-search', torboxSearch);
-builtinsRouter.use('/torznab', torznab);
-builtinsRouter.use('/newznab', newznab);
-builtinsRouter.use('/prowlarr', prowlarr);
-builtinsRouter.use('/knaben', knaben);
-builtinsRouter.use('/eztv', eztv);
-builtinsRouter.use('/torrent-galaxy', torrentGalaxy);
-builtinsRouter.use('/seadex', seadex);
-builtinsRouter.use('/easynews', easynews);
-builtinsRouter.use('/library', library);
-app.use('/builtins', builtinsRouter);
+// Builtins Routes
+const builtins = new Hono<HonoEnv>();
+builtins.use('*', internalMiddleware);
+builtins.route('/gdrive', gdrive);
+builtins.route('/torbox-search', torboxSearch);
+builtins.route('/torznab', torznab);
+builtins.route('/newznab', newznab);
+builtins.route('/prowlarr', prowlarr);
+builtins.route('/knaben', knaben);
+builtins.route('/eztv', eztv);
+builtins.route('/torrent-galaxy', torrentGalaxy);
+builtins.route('/seadex', seadex);
+builtins.route('/easynews', easynews);
+builtins.route('/library', library);
 
-app.get('/logo.png', staticRateLimiter, (req, res, next) => {
+app.route('/builtins', builtins);
+
+// Static files and other routes
+app.get('/logo.png', staticRateLimiter, (c) => {
   const filePath = path.resolve(
     frontendRoot,
     Env.ALTERNATE_DESIGN ? 'logo_alt.png' : 'logo.png'
   );
   if (filePath.startsWith(frontendRoot) && fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-    return;
+    return c.body(fs.readFileSync(filePath), 200, {
+      'Content-Type': 'image/png',
+    });
   }
-  next();
+  return c.notFound();
 });
-app.get(
-  [
-    '/_next/*any',
-    '/assets/*any',
-    '/favicon.ico',
-    '/manifest.json',
-    '/web-app-manifest-192x192.png',
-    '/web-app-manifest-512x512.png',
-    '/apple-icon.png',
-    '/mini-nightly-white.png',
-    '/mini-stable-white.png',
-    '/icon0.svg',
-    '/icon1.png',
-  ],
-  staticRateLimiter,
-  (req, res, next) => {
-    const filePath = path.resolve(frontendRoot, req.path.replace(/^\//, ''));
-    if (filePath.startsWith(frontendRoot) && fs.existsSync(filePath)) {
-      res.sendFile(filePath);
-      return;
-    }
-    next();
-  }
+
+// serve static from frontendRoot
+app.use(
+  '/*',
+  serveStatic({
+    root: path.relative(process.cwd(), frontendRoot),
+  })
 );
 
-app.get('/static/*any', corsMiddleware, (req, res, next) => {
-  const filePath = path.resolve(
-    staticRoot,
-    req.path.replace(/^\/static\//, '')
+// serve static from staticRoot
+app.use(
+  '/static/*',
+  corsMiddleware,
+  serveStatic({
+    root: path.relative(process.cwd(), staticRoot),
+    rewriteRequestPath: (path) => path.replace(/^\/static/, ''),
+  })
+);
+
+app.get('/oauth/callback/gdrive', (c) => {
+  return c.html(
+    fs.readFileSync(path.join(frontendRoot, 'oauth/callback/gdrive.html'), 'utf-8')
   );
-  logger.debug(`Static file requested: ${filePath}`);
-  if (filePath.startsWith(staticRoot) && fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-    return;
-  }
-  next();
 });
 
-app.get('/oauth/callback/gdrive', (req, res) => {
-  res.sendFile(path.join(frontendRoot, 'oauth/callback/gdrive.html'));
-});
-app.get('/', (req, res) => {
-  res.redirect('/stremio/configure');
+app.get('/', (c) => {
+  return c.redirect('/stremio/configure');
 });
 
 // legacy route handlers
-app.get(
-  '{/:config}/stream/:type/:id.json',
-  stremioStreamRateLimiter,
-  (req, res) => {
-    const baseUrl =
-      Env.BASE_URL ||
-      `${req.protocol}://${req.hostname}${
-        req.hostname === 'localhost' ? `:${Env.PORT}` : ''
-      }`;
-    res.json({
-      streams: [
-        StremioTransformer.createErrorStream({
-          errorDescription:
-            'AIOStreams v2 requires you to reconfigure. Please click this stream to reconfigure.',
-          errorUrl: `${baseUrl}/stremio/configure`,
-        }),
-      ],
-    });
-  }
-);
-app.get('{/:config}/configure', (req, res) => {
-  res.redirect('/stremio/configure');
+app.get('/:config/stream/:type/:id.json', stremioStreamRateLimiter, (c) => {
+  const baseUrl =
+    Env.BASE_URL ||
+    `${new URL(c.req.url).protocol}//${new URL(c.req.url).hostname}${
+      new URL(c.req.url).hostname === 'localhost' ? `:${Env.PORT}` : ''
+    }`;
+  return c.json({
+    streams: [
+      StremioTransformer.createErrorStream({
+        errorDescription:
+          'AIOStreams v2 requires you to reconfigure. Please click this stream to reconfigure.',
+        errorUrl: `${baseUrl}/stremio/configure`,
+      }),
+    ],
+  });
+});
+
+app.get('/:config/configure', (c) => {
+  return c.redirect('/stremio/configure');
 });
 
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json(
+app.notFound((c) => {
+  return c.json(
     createResponse({
       success: false,
       detail: 'Not Found',
-    })
+    }),
+    404
   );
 });
 
-// Error handling middleware should be last
-app.use(errorMiddleware);
+// Error handling
+app.onError((err, c) => {
+  return errorMiddleware(err, c);
+});
 
 export default app;

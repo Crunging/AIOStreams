@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import {
   Env,
   getEnvironmentServiceDetails,
@@ -9,10 +9,11 @@ import { StatusResponse } from '@aiostreams/core';
 import { encryptString } from '@aiostreams/core';
 import { RegexAccess, FeatureControl } from '@aiostreams/core';
 import { createResponse } from '../../utils/responses.js';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 
-const statusInfo = async (): Promise<StatusResponse> => {
+const getStatusInfo = async (): Promise<StatusResponse> => {
   const shouldExposeUsers = Env.EXPOSE_USER_COUNT;
   const userCount = shouldExposeUsers
     ? await UserRepository.getUserCount()
@@ -22,6 +23,8 @@ const statusInfo = async (): Promise<StatusResponse> => {
   if (Env.FORCE_PUBLIC_PROXY_HOST) {
     forcedPublicProxyUrl = `${Env.FORCE_PUBLIC_PROXY_PROTOCOL}://${Env.FORCE_PUBLIC_PROXY_HOST}:${Env.FORCE_PUBLIC_PROXY_PORT ?? ''}`;
   }
+
+  const allowedRegex = await RegexAccess.allowedRegexPatterns();
 
   return {
     version: Env.VERSION,
@@ -41,12 +44,11 @@ const statusInfo = async (): Promise<StatusResponse> => {
       selSyncAccess: Env.SEL_SYNC_ACCESS,
       whitelistedSelUrls: Env.WHITELISTED_SEL_URLS || [],
       allowedRegexPatterns:
-        (await RegexAccess.allowedRegexPatterns()).patterns.length > 0
+        allowedRegex.patterns.length > 0
           ? {
-              patterns: (await RegexAccess.allowedRegexPatterns()).patterns,
-              description: (await RegexAccess.allowedRegexPatterns())
-                .description,
-              urls: (await RegexAccess.allowedRegexPatterns()).urls,
+              patterns: allowedRegex.patterns,
+              description: allowedRegex.description,
+              urls: allowedRegex.urls,
             }
           : undefined,
       loggingSensitiveInfo: Env.LOG_SENSITIVE_INFO,
@@ -109,18 +111,14 @@ const statusInfo = async (): Promise<StatusResponse> => {
   };
 };
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const info = await statusInfo();
-    res.status(200).json(
-      createResponse({
-        success: true,
-        data: info,
-      })
-    );
-  } catch (error) {
-    next(error);
-  }
+app.get('/', async (c) => {
+  const info = await getStatusInfo();
+  return c.json(
+    createResponse({
+      success: true,
+      data: info,
+    })
+  );
 });
 
-export default router;
+export default app;

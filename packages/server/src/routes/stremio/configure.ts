@@ -1,11 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Context } from 'hono';
 import path from 'path';
-const router: Router = Router();
-import { staticRateLimiter } from '../../middlewares/ratelimit.js';
+import fs from 'fs';
 import { frontendRoot } from '../../app.js';
+import { staticRateLimiter } from '../../middlewares/ratelimit.js';
 
-export default router;
-
-router.get('/', staticRateLimiter, (req: Request, res: Response) => {
-  res.sendFile(path.join(frontendRoot, 'index.html'));
-});
+export const configure = async (c: Context) => {
+  // staticRateLimiter is applied at the router level in app.ts
+  const html = fs.readFileSync(path.join(frontendRoot, 'index.html'), 'utf-8');
+  return c.html(html);
+};

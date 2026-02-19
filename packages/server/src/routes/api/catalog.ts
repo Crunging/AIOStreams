@@ -1,23 +1,23 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import { catalogApiRateLimiter } from '../../middlewares/ratelimit.js';
 import {
   createLogger,
   UserData,
   AIOStreams,
-  UserDataSchema,
   validateConfig,
   APIError,
   constants,
 } from '@aiostreams/core';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
-
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
-router.use(catalogApiRateLimiter);
 
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  const { userData } = req.body;
+app.use('*', catalogApiRateLimiter);
+
+app.post('/', async (c) => {
+  const { userData } = await c.req.json();
   try {
     let validatedUserData: UserData;
     try {
@@ -35,43 +35,41 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         error.message =
           'Please make sure the addon password is provided and correct by attempting to create/save a user first';
       }
-      next(
-        new APIError(
-          constants.ErrorCode.USER_INVALID_CONFIG,
-          undefined,
-          error instanceof Error ? error.message : undefined
-        )
+      throw new APIError(
+        constants.ErrorCode.USER_INVALID_CONFIG,
+        undefined,
+        error instanceof Error ? error.message : undefined
       );
-      return;
     }
     validatedUserData.catalogModifications = undefined;
 
     const aio = new AIOStreams(validatedUserData);
     await aio.initialise();
+    
     // return minimal catalog data
-    const catalogs = aio.getCatalogs().map((catalog) => ({
+    const catalogs = aio.getCatalogs().map((catalog: any) => ({
       id: catalog.id,
       name: catalog.name,
       type: catalog.type,
       addonName: aio.getAddon(catalog.id.split('.')[0])?.name,
 
       hideable: catalog.extra
-        ? catalog.extra.every((e) => !e.isRequired)
+        ? catalog.extra.every((e: any) => !e.isRequired)
         : true,
       searchable: catalog.extra
         ? catalog.extra?.findIndex(
-            (e) => e.name === 'search' && !e.isRequired
+            (e: any) => e.name === 'search' && !e.isRequired
           ) !== -1
         : false,
     }));
-    res.status(200).json(createResponse({ success: true, data: catalogs }));
+    return c.json(createResponse({ success: true, data: catalogs }));
   } catch (error) {
     if (error instanceof APIError) {
-      next(error);
+      throw error;
     } else {
-      next(new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR));
+      throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR);
     }
   }
 });
 
-export default router;
+export default app;

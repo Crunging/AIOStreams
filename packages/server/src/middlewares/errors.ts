@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Context } from 'hono';
 import {
   createLogger,
   APIError,
@@ -7,20 +7,14 @@ import {
 } from '@aiostreams/core';
 import { createResponse } from '../utils/responses.js';
 import { ZodError } from 'zod';
+import { HonoEnv } from '../types.js';
 
 const logger = createLogger('server');
 
 export const errorMiddleware = (
   err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
+  c: Context<HonoEnv>
 ) => {
-  if (!err) {
-    next();
-    return;
-  }
-
   let error;
   if (!(err instanceof APIError) && !(err instanceof ZodError)) {
     // log unexpected errors
@@ -30,8 +24,9 @@ export const errorMiddleware = (
   } else {
     error = err;
   }
+
   if (error instanceof ZodError) {
-    res.status(400).json(
+    return c.json(
       createResponse({
         success: false,
         error: {
@@ -39,16 +34,17 @@ export const errorMiddleware = (
           message: 'Invalid Request',
           issues: JSON.parse(error.message),
         },
-      })
+      }),
+      400
     );
-    return;
   }
-  if (error.code === constants.ErrorCode.RATE_LIMIT_EXCEEDED) {
+
+  if (error instanceof APIError && error.code === constants.ErrorCode.RATE_LIMIT_EXCEEDED) {
     const stremioResourceRequestRegex =
       /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9+/=]+\/(stream|meta|addon_catalog|subtitles|catalog)\/[^/]+\/[^/]+(?:\/[^/]+)?\.json\/?$/;
-    const resource = stremioResourceRequestRegex.exec(req.originalUrl);
+    const resource = stremioResourceRequestRegex.exec(new URL(c.req.url).pathname);
     if (resource) {
-      res.json(
+      return c.json(
         StremioTransformer.createDynamicError(
           resource[1] as
             | 'stream'
@@ -61,18 +57,20 @@ export const errorMiddleware = (
           }
         )
       );
-      return;
     }
   }
 
-  res.status(error.statusCode).json(
+  const statusCode = error instanceof APIError ? error.statusCode : 500;
+  const code = error instanceof APIError ? error.code : constants.ErrorCode.INTERNAL_SERVER_ERROR;
+
+  return c.json(
     createResponse({
       success: false,
       error: {
-        code: error.code,
+        code: code,
         message: error.message,
       },
-    })
+    }),
+    statusCode as any
   );
-  return;
 };

@@ -1,33 +1,20 @@
+import { Context } from 'hono';
 import { APIError, constants, createLogger, Env } from '@aiostreams/core';
-import { Router, Request, Response } from 'express';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-interface AliasParams {
-  alias: string;
-  [key: string]: string;
-}
+export const alias = async (c: Context<HonoEnv>) => {
+  const alias = c.req.param('alias');
+  const wildcardPath = c.req.path.split('/').slice(3).join('/'); // Skip /stremio/u/:alias
 
-router.get(
-  '/:alias/*wildcardPath',
-  (req: Request<AliasParams>, res: Response) => {
-    const { alias } = req.params;
-    let { wildcardPath } = req.params;
-    if (Array.isArray(wildcardPath)) {
-      wildcardPath = wildcardPath.join('/');
-    }
-
-    const configuration = Env.ALIASED_CONFIGURATIONS.get(alias);
-    if (!configuration || !configuration.uuid || !configuration.password) {
-      throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
-    }
-
-    const redirectPath = `/stremio/${configuration.uuid}/${configuration.password}${wildcardPath ? `/${wildcardPath}` : ''}`;
-    logger.debug(`Redirecting alias ${alias} to ${redirectPath}`);
-
-    res.redirect(redirectPath);
+  const configuration = Env.ALIASED_CONFIGURATIONS.get(alias);
+  if (!configuration || !configuration.uuid || !configuration.password) {
+    throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
   }
-);
 
-export default router;
+  const redirectPath = `/stremio/${configuration.uuid}/${configuration.password}${wildcardPath ? `/${wildcardPath}` : ''}`;
+  logger.debug(`Redirecting alias ${alias} to ${redirectPath}`);
+
+  return c.redirect(redirectPath);
+};

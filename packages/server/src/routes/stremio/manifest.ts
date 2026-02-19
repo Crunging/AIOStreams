@@ -1,24 +1,19 @@
-import { Router, Request, Response } from 'express';
 import {
   AIOStreams,
   APIError,
   constants,
   Env,
-  getSimpleTextHash,
   UserData,
 } from '@aiostreams/core';
 import { Manifest } from '@aiostreams/core';
 import { createLogger } from '@aiostreams/core';
 import { stremioManifestRateLimiter } from '../../middlewares/ratelimit.js';
+import { HonoEnv } from '../../types.js';
+import { Context } from 'hono';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-export default router;
-
-router.use(stremioManifestRateLimiter);
-
-const manifest = async (config?: UserData): Promise<Manifest> => {
+const getManifest = async (config?: UserData): Promise<Manifest> => {
   let addonId = Env.ADDON_ID;
   if (config) {
     addonId = addonId += `.${config.uuid?.substring(0, 12)}`;
@@ -42,7 +37,7 @@ const manifest = async (config?: UserData): Promise<Manifest> => {
     description: config?.addonDescription || Env.DESCRIPTION,
     catalogs,
     resources,
-    types: resources.reduce((types, resource) => {
+    types: resources.reduce((types: string[], resource: any) => {
       const resourceTypes =
         typeof resource === 'string' ? [resource] : resource.types;
       return [...new Set([...types, ...resourceTypes])];
@@ -67,12 +62,13 @@ const manifest = async (config?: UserData): Promise<Manifest> => {
   };
 };
 
-router.get('/', async (req: Request, res: Response<Manifest>, next) => {
-  logger.debug('Manifest request received', { userData: req.userData });
+export const manifest = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  logger.debug('Manifest request received', { userData });
   try {
-    res.status(200).json(await manifest(req.userData));
+    return c.json(await getManifest(userData));
   } catch (error) {
     logger.error(`Failed to generate manifest: ${error}`);
-    next(new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR));
+    throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR);
   }
-});
+};

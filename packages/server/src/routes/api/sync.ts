@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import {
   APIError,
   constants,
@@ -9,8 +9,9 @@ import {
 } from '@aiostreams/core';
 import { z } from 'zod';
 import { createResponse } from '../../utils/responses.js';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
 const ResolveSyncedSchema = z.object({
@@ -20,30 +21,25 @@ const ResolveSyncedSchema = z.object({
   password: z.string().optional(),
 });
 
-router.post('/resolve', async (req, res, next) => {
-  const parsed = ResolveSyncedSchema.safeParse(req.body);
+app.post('/resolve', async (c) => {
+  const body = await c.req.json();
+  const parsed = ResolveSyncedSchema.safeParse(body);
   if (!parsed.success) {
-    next(
-      new APIError(
-        constants.ErrorCode.MISSING_REQUIRED_FIELDS,
-        undefined,
-        'regexUrls and selUrls must be arrays of valid URLs (max 10 each)'
-      )
+    throw new APIError(
+      constants.ErrorCode.MISSING_REQUIRED_FIELDS,
+      undefined,
+      'regexUrls and selUrls must be arrays of valid URLs (max 10 each)'
     );
-    return;
   }
 
   const { regexUrls, selUrls, uuid, password } = parsed.data;
 
   if (!regexUrls?.length && !selUrls?.length) {
-    next(
-      new APIError(
-        constants.ErrorCode.MISSING_REQUIRED_FIELDS,
-        undefined,
-        'At least one of regexUrls or selUrls must be provided'
-      )
+    throw new APIError(
+      constants.ErrorCode.MISSING_REQUIRED_FIELDS,
+      undefined,
+      'At least one of regexUrls or selUrls must be provided'
     );
-    return;
   }
 
   try {
@@ -78,7 +74,7 @@ router.post('/resolve', async (req, res, next) => {
       }
     }
 
-    res.status(200).json(
+    return c.json(
       createResponse({
         success: true,
         detail:
@@ -94,12 +90,12 @@ router.post('/resolve', async (req, res, next) => {
     );
   } catch (error) {
     if (error instanceof APIError) {
-      next(error);
+      throw error;
     } else {
       logger.error(error);
-      next(new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR));
+      throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR);
     }
   }
 });
 
-export default router;
+export default app;
