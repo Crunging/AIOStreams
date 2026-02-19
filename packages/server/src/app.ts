@@ -149,7 +149,7 @@ const chillLink = new Hono<HonoEnv>();
 chillLink.use('*', corsMiddleware);
 chillLink.use('*', userDataMiddleware);
 chillLink.get('/manifest', chillLinkManifest);
-chillLink.get('/streams/:type/:id', chillLinkStreams);
+chillLink.get('/streams/:type/:id', stremioStreamRateLimiter, chillLinkStreams);
 
 app.route('/chilllink/:uuid/:encryptedPassword', chillLink);
 
