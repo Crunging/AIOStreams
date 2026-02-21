@@ -223,6 +223,7 @@ const EASYNEWS_SERVICE = 'easynews';
 const NZBDAV_SERVICE = 'nzbdav';
 const ALTMOUNT_SERVICE = 'altmount';
 const STREMIO_NNTP_SERVICE = 'stremio_nntp';
+const STREMTHRU_NEWZ_SERVICE = 'stremthru_newz';
 
 const SERVICES = [
   REALDEBRID_SERVICE,
@@ -240,6 +241,7 @@ const SERVICES = [
   NZBDAV_SERVICE,
   ALTMOUNT_SERVICE,
   STREMIO_NNTP_SERVICE,
+  STREMTHRU_NEWZ_SERVICE,
 ] as const;
 
 export const BUILTIN_SUPPORTED_SERVICES = [
@@ -256,6 +258,7 @@ export const BUILTIN_SUPPORTED_SERVICES = [
   ALTMOUNT_SERVICE,
   STREMIO_NNTP_SERVICE,
   EASYNEWS_SERVICE,
+  STREMTHRU_NEWZ_SERVICE,
 ] as const;
 
 export type ServiceId = (typeof SERVICES)[number];
@@ -717,6 +720,40 @@ const SERVICE_DETAILS: Record<
         name: 'Encoded Token',
         description:
           'Please authorise at MediaFusion and copy the token into here.',
+        type: 'password',
+        required: true,
+      },
+    ],
+  },
+  [STREMTHRU_NEWZ_SERVICE]: {
+    id: STREMTHRU_NEWZ_SERVICE,
+    name: 'StremThru Newz',
+    shortName: 'ST',
+    knownNames: ['ST', 'StremThru Newz', 'StremThruNewz'],
+    signUpText:
+      'Stream usenet content via [StremThru](https://github.com/MunifTanjim/stremthru).',
+    credentials: [
+      {
+        id: 'url',
+        name: 'StremThru URL',
+        description:
+          'The base URL of your StremThru instance used for requests e.g. http://stremthru:8080 or https://stremthru.mydomain.com',
+        type: 'string',
+        required: true,
+      },
+      {
+        id: 'publicUrl',
+        name: 'Public StremThru URL (Optional)',
+        description:
+          'The public URL of your StremThru instance. If your URL above is not publicly accessible, provide a public URL here to replace the base URL and protocol in playback links.',
+        type: 'string',
+        required: false,
+      },
+      {
+        id: 'authToken',
+        name: 'Auth Token',
+        description:
+          'Your StremThru authentication token from `STREMTHRU_AUTH`',
         type: 'password',
         required: true,
       },
@@ -1394,6 +1431,7 @@ export {
   ALTMOUNT_SERVICE,
   STREMIO_NNTP_SERVICE,
   EASYNEWS_SERVICE,
+  STREMTHRU_NEWZ_SERVICE,
   SERVICE_DETAILS,
   TOP_LEVEL_OPTION_DETAILS,
   HEADERS_FOR_IP_FORWARDING,

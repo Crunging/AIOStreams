@@ -6,6 +6,7 @@ import {
   getEnvironmentServiceDetails,
   PresetManager,
   RegexAccess,
+  SelAccess,
   StatusResponse,
   UserRepository,
 } from '@aiostreams/core';
@@ -25,7 +26,7 @@ const getStatusInfo = async (): Promise<StatusResponse> => {
     forcedPublicProxyUrl = `${Env.FORCE_PUBLIC_PROXY_PROTOCOL}://${Env.FORCE_PUBLIC_PROXY_HOST}:${Env.FORCE_PUBLIC_PROXY_PORT ?? ''}`;
   }
 
-  const allowedRegex = await RegexAccess.allowedRegexPatterns();
+  const allowedRegexes = await RegexAccess.allowedRegexPatterns();
 
   return {
     version: Env.VERSION,
@@ -41,17 +42,14 @@ const getStatusInfo = async (): Promise<StatusResponse> => {
       alternateDesign: Env.ALTERNATE_DESIGN,
       protected: Env.ADDON_PASSWORD.length > 0,
       tmdbApiAvailable: !!Env.TMDB_ACCESS_TOKEN,
-      regexFilterAccess: Env.REGEX_FILTER_ACCESS,
-      selSyncAccess: Env.SEL_SYNC_ACCESS,
-      whitelistedSelUrls: Env.WHITELISTED_SEL_URLS || [],
-      allowedRegexPatterns:
-        allowedRegex.patterns.length > 0
-          ? {
-              patterns: allowedRegex.patterns,
-              description: allowedRegex.description,
-              urls: allowedRegex.urls,
-            }
-          : undefined,
+      regexAccess: {
+        level: Env.REGEX_FILTER_ACCESS,
+        ...allowedRegexes,
+      },
+      selSyncAccess: {
+        level: Env.SEL_SYNC_ACCESS,
+        trustedUrls: SelAccess.getAllowedUrls(),
+      },
       loggingSensitiveInfo: Env.LOG_SENSITIVE_INFO,
       forced: {
         proxy: {
