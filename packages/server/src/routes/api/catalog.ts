@@ -45,7 +45,7 @@ app.post('/', async (c) => {
 
     const aio = new AIOStreams(validatedUserData);
     await aio.initialise();
-    
+
     // return minimal catalog data
     const catalogs = aio.getCatalogs().map((catalog: any) => ({
       id: catalog.id,

@@ -5,15 +5,18 @@ import { HonoEnv } from '../types.js';
 
 const WHIELIST = ['/easynews/nzb', '/library/refresh'];
 
-export const internalMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
+export const internalMiddleware: MiddlewareHandler<HonoEnv> = async (
+  c,
+  next
+) => {
   const url = new URL(c.req.url);
   const path = url.pathname;
-  
+
   if (WHIELIST.some((p) => path.startsWith(p))) {
     await next();
     return;
   }
-  
+
   const internalSecret = c.req.header(constants.INTERNAL_SECRET_HEADER);
   if (
     internalSecret !== Env.INTERNAL_SECRET &&

@@ -1,9 +1,5 @@
 import { Context } from 'hono';
-import {
-  AIOStreams,
-  createLogger,
-  StremioTransformer,
-} from '@aiostreams/core';
+import { AIOStreams, createLogger, StremioTransformer } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
@@ -23,7 +19,7 @@ export const catalog = async (c: Context<HonoEnv>) => {
     const type = c.req.param('type');
     const idRaw = c.req.param('id.json') ?? c.req.param('id');
     const extraRaw = c.req.param('extra.json') ?? c.req.param('extra');
-    
+
     const normalizeParam = (value?: string) =>
       value?.replace(/\.json$/, '') ?? '';
     const id = normalizeParam(idRaw);
@@ -42,7 +38,10 @@ export const catalog = async (c: Context<HonoEnv>) => {
       },
     ];
     if (transformer.showError('catalog', errors)) {
-      logger.error(`Unexpected error during catalog retrieval: ${errorMsg}`);
+      logger.error(
+        `Unexpected error during catalog retrieval: ${errorMsg}`,
+        error
+      );
       return c.json(
         transformer.transformCatalog({
           success: false,

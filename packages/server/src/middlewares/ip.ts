@@ -14,7 +14,8 @@ function isValidIp(ip: string | undefined): boolean {
 }
 
 const ipv4ToLong = (ip: string) =>
-  ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+  ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>>
+  0;
 
 const ipv6ToBigInt = (ip: string): bigint => {
   const [left, right] = ip.split('::');
@@ -42,11 +43,13 @@ const isIpInRange = (ip: string, range: string) => {
 
     try {
       if (rangeIp.includes(':')) {
-         // IPv6
-         if (!ip.includes(':')) return false;
-         const ipBig = ipv6ToBigInt(ip);
-         const rangeBig = ipv6ToBigInt(rangeIp);
-         return (ipBig >> BigInt(128 - prefix)) === (rangeBig >> BigInt(128 - prefix));
+        // IPv6
+        if (!ip.includes(':')) return false;
+        const ipBig = ipv6ToBigInt(ip);
+        const rangeBig = ipv6ToBigInt(rangeIp);
+        return (
+          ipBig >> BigInt(128 - prefix) === rangeBig >> BigInt(128 - prefix)
+        );
       } else {
         // IPv4
         if (ip.includes(':')) return false;
@@ -86,7 +89,7 @@ export const ipMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
       undefined // Hono will provide the connection IP if needed elsewhere
     );
   };
-  
+
   // Use getConnInfo to get the remote address from the underlying node request
   const connInfo = getConnInfo(c);
   const connIp = connInfo.remote.address ?? undefined;
@@ -129,9 +132,12 @@ export const ipMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
       c.req.header('CF-Connecting-IP') ||
       ip
     : ip;
-  
-  c.set('userIp', isPrivateIp(userIp) || !isValidIp(userIp) ? undefined : userIp);
+
+  c.set(
+    'userIp',
+    isPrivateIp(userIp) || !isValidIp(userIp) ? undefined : userIp
+  );
   c.set('requestIp', isValidIp(requestIp) ? requestIp : undefined);
-  
+
   await next();
 };

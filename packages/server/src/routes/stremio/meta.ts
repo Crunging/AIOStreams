@@ -1,9 +1,5 @@
 import { Context } from 'hono';
-import {
-  AIOStreams,
-  createLogger,
-  StremioTransformer,
-} from '@aiostreams/core';
+import { AIOStreams, createLogger, StremioTransformer } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');

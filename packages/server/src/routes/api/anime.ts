@@ -21,12 +21,7 @@ app.use('*', animeApiRateLimiter);
 app.get('/', async (c) => {
   try {
     const query = c.req.query();
-    const {
-      idType,
-      idValue,
-      season,
-      episode,
-    } = z
+    const { idType, idValue, season, episode } = z
       .object({
         idType: z.enum(ID_TYPES),
         idValue: z.union([z.string(), z.coerce.number()]),

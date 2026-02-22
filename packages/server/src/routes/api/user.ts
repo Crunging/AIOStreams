@@ -42,7 +42,7 @@ app.on('HEAD', '/', async (c) => {
 app.get('/', async (c) => {
   const uuid = c.get('uuid') || c.req.query('uuid');
   const password = c.req.query('password');
-  
+
   if (typeof uuid !== 'string' || typeof password !== 'string') {
     throw new APIError(
       constants.ErrorCode.MISSING_REQUIRED_FIELDS,
@@ -82,7 +82,7 @@ app.post('/', async (c) => {
       'config and password are required'
     );
   }
-  
+
   const { uuid, encryptedPassword } = await UserRepository.createUser(
     config,
     password
@@ -138,7 +138,7 @@ app.delete('/', async (c) => {
   if (!uuid || !password) {
     throw new APIError(constants.ErrorCode.MISSING_REQUIRED_FIELDS);
   }
-  
+
   await UserRepository.deleteUser(uuid, password);
   return c.json(
     createResponse({

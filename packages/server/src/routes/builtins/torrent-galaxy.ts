@@ -1,5 +1,9 @@
 import { Hono } from 'hono';
-import { createLogger, TorrentGalaxyAddon, fromUrlSafeBase64 } from '@aiostreams/core';
+import {
+  createLogger,
+  TorrentGalaxyAddon,
+  fromUrlSafeBase64,
+} from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
 const app = new Hono<HonoEnv>();

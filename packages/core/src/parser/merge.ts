@@ -3,7 +3,10 @@ import { ParsedFile } from '../db/schemas.js';
 /**
  * Merges two arrays, deduplicating the result.
  */
-export function arrayMerge<T>(arr1: T[] | undefined, arr2: T[] | undefined): T[] {
+export function arrayMerge<T>(
+  arr1: T[] | undefined,
+  arr2: T[] | undefined
+): T[] {
   return Array.from(new Set([...(arr1 ?? []), ...(arr2 ?? [])]));
 }
 

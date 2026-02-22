@@ -11,10 +11,7 @@ import { HonoEnv } from '../types.js';
 
 const logger = createLogger('server');
 
-export const errorMiddleware = (
-  err: Error,
-  c: Context<HonoEnv>
-) => {
+export const errorMiddleware = (err: Error, c: Context<HonoEnv>) => {
   let error;
   if (!(err instanceof APIError) && !(err instanceof ZodError)) {
     // log unexpected errors
@@ -39,10 +36,15 @@ export const errorMiddleware = (
     );
   }
 
-  if (error instanceof APIError && error.code === constants.ErrorCode.RATE_LIMIT_EXCEEDED) {
+  if (
+    error instanceof APIError &&
+    error.code === constants.ErrorCode.RATE_LIMIT_EXCEEDED
+  ) {
     const stremioResourceRequestRegex =
       /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9+/=]+\/(stream|meta|addon_catalog|subtitles|catalog)\/[^/]+\/[^/]+(?:\/[^/]+)?\.json\/?$/;
-    const resource = stremioResourceRequestRegex.exec(new URL(c.req.url).pathname);
+    const resource = stremioResourceRequestRegex.exec(
+      new URL(c.req.url).pathname
+    );
     if (resource) {
       return c.json(
         StremioTransformer.createDynamicError(
@@ -61,7 +63,10 @@ export const errorMiddleware = (
   }
 
   const statusCode = error instanceof APIError ? error.statusCode : 500;
-  const code = error instanceof APIError ? error.code : constants.ErrorCode.INTERNAL_SERVER_ERROR;
+  const code =
+    error instanceof APIError
+      ? error.code
+      : constants.ErrorCode.INTERNAL_SERVER_ERROR;
 
   return c.json(
     createResponse({

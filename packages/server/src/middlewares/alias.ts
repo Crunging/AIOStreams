@@ -4,7 +4,10 @@ import { HonoEnv } from '../types.js';
 
 // Resolves alias to UUID for user API routes.
 // If the provided value is not a UUID and matches a known alias, replaces it with the real UUID.
-export async function resolveUuidAliasForUserApi(c: Context<HonoEnv>, next: Next) {
+export async function resolveUuidAliasForUserApi(
+  c: Context<HonoEnv>,
+  next: Next
+) {
   const uuidRegex =
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 

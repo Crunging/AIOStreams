@@ -12,7 +12,7 @@ const logger = createLogger('server');
 export const stream = async (c: Context<HonoEnv>) => {
   const userData = c.get('userData');
   const requestIp = c.get('requestIp');
-  
+
   // Check if we have user data (set by middleware in authenticated routes)
   if (!userData) {
     // Return a response indicating configuration is needed
@@ -63,8 +63,7 @@ export const stream = async (c: Context<HonoEnv>) => {
       )
     );
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     const errors = [
       {
         description: errorMessage,

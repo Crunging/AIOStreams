@@ -14,7 +14,6 @@ const logger = createLogger('server');
 // Create a single Redis client for rate limiting if configured
 let redisClient: ReturnType<typeof createClient> | undefined;
 
-
 if (
   Env.REDIS_URI &&
   Env.RATE_LIMIT_STORE === 'redis' &&
@@ -69,23 +68,22 @@ const createRateLimiter = (
     handler: (c) => {
       const info = getConnInfo(c);
       const ip = info.remote?.address || 'unknown';
-      logger.warn(
-        `${prefix} rate limit exceeded for IP: ${ip}`
-      );
-      
+      logger.warn(`${prefix} rate limit exceeded for IP: ${ip}`);
+
       const stremioResourceRequestRegex =
         /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9_=-]+\/(stream|meta|addon_catalog|subtitles|catalog)/;
-      const resource = stremioResourceRequestRegex.exec(new URL(c.req.url).pathname);
-      
+      const resource = stremioResourceRequestRegex.exec(
+        new URL(c.req.url).pathname
+      );
+
       if (resource) {
         return c.json(
-          StremioTransformer.createDynamicError(
-            resource[1] as any,
-            { errorDescription: 'Rate Limit Exceeded' }
-          )
+          StremioTransformer.createDynamicError(resource[1] as any, {
+            errorDescription: 'Rate Limit Exceeded',
+          })
         );
       }
-      
+
       throw new APIError(constants.ErrorCode.RATE_LIMIT_EXCEEDED);
     },
   });

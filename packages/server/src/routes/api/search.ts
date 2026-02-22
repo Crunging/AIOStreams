@@ -51,8 +51,10 @@ app.get('/', async (c) => {
       ...query,
       requiredFields: allQueries.requiredFields ?? query.requiredFields,
     });
-    
-    let encodedUserData: string | undefined = c.req.header('x-aiostreams-user-data');
+
+    let encodedUserData: string | undefined = c.req.header(
+      'x-aiostreams-user-data'
+    );
     let auth: string | undefined = c.req.header('authorization');
 
     if (!encodedUserData && !auth) {
@@ -148,11 +150,11 @@ app.get('/', async (c) => {
         throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
       }
     }
-    
+
     if (!userData) {
       throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
     }
-    
+
     userData.ip = c.get('userIp');
     try {
       userData = await validateConfig(userData, {
@@ -166,11 +168,9 @@ app.get('/', async (c) => {
         error.message
       );
     }
-    
+
     const transformer = new ApiTransformer(userData);
-    const stremioTransformer = format
-      ? new StremioTransformer(userData)
-      : null;
+    const stremioTransformer = format ? new StremioTransformer(userData) : null;
 
     const aiostreams = new AIOStreams(userData);
     await aiostreams.initialise();

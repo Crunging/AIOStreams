@@ -57,7 +57,12 @@ import {
   stremioMetaRateLimiter,
 } from './middlewares/index.js';
 
-import { constants, createLogger, Env, StremioTransformer } from '@aiostreams/core';
+import {
+  constants,
+  createLogger,
+  Env,
+  StremioTransformer,
+} from '@aiostreams/core';
 import { createResponse } from './utils/responses.js';
 import path from 'path';
 import fs from 'fs';
@@ -157,11 +162,31 @@ stremioAuth.get('/configure.txt', staticRateLimiter, (c) => {
 });
 stremioAuth.get('/meta/:type/:id.json', stremioMetaRateLimiter, meta);
 stremioAuth.get('/catalog/:type/:id.json', stremioCatalogRateLimiter, catalog);
-stremioAuth.get('/catalog/:type/:id/:extra.json', stremioCatalogRateLimiter, catalog);
-stremioAuth.get('/subtitles/:type/:id.json', stremioSubtitleRateLimiter, subtitle);
-stremioAuth.get('/subtitles/:type/:id/:extra.json', stremioSubtitleRateLimiter, subtitle);
-stremioAuth.get('/addon_catalog/:type/:id.json', stremioCatalogRateLimiter, addonCatalog);
-stremioAuth.get('/addon_catalog/:type/:id/:extra.json', stremioCatalogRateLimiter, addonCatalog);
+stremioAuth.get(
+  '/catalog/:type/:id/:extra.json',
+  stremioCatalogRateLimiter,
+  catalog
+);
+stremioAuth.get(
+  '/subtitles/:type/:id.json',
+  stremioSubtitleRateLimiter,
+  subtitle
+);
+stremioAuth.get(
+  '/subtitles/:type/:id/:extra.json',
+  stremioSubtitleRateLimiter,
+  subtitle
+);
+stremioAuth.get(
+  '/addon_catalog/:type/:id.json',
+  stremioCatalogRateLimiter,
+  addonCatalog
+);
+stremioAuth.get(
+  '/addon_catalog/:type/:id/:extra.json',
+  stremioCatalogRateLimiter,
+  addonCatalog
+);
 
 app.route('/stremio', stremio);
 app.route('/stremio/:uuid/:encryptedPassword', stremioAuth);
@@ -171,7 +196,11 @@ const chillLink = new Hono<HonoEnv>();
 chillLink.use('*', corsMiddleware);
 chillLink.use('*', userDataMiddleware);
 chillLink.get('/manifest', chillLinkManifest);
-chillLink.get('/streams/:type/:id.json', stremioStreamRateLimiter, chillLinkStreams);
+chillLink.get(
+  '/streams/:type/:id.json',
+  stremioStreamRateLimiter,
+  chillLinkStreams
+);
 
 app.route('/chilllink/:uuid/:encryptedPassword', chillLink);
 

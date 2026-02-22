@@ -36,7 +36,7 @@ app.get('/:encodedConfig/manifest.json', async (c) => {
     if (config?.services) {
       preWarmLibraryCaches(config.services, c.get('userIp'), config.sources);
     }
-    
+
     return c.json(manifest);
   } catch (error) {
     logger.error('Failed to get library manifest:', error);
@@ -134,9 +134,7 @@ app.get('/refresh/:serviceId/:encryptedCredential', async (c) => {
       const remaining = Math.ceil(
         (REFRESH_COOLDOWN_MS - timeElapsed * 1000) / 1000
       );
-      logger.info(
-        `Refresh rate limited for ${svcId}, ${remaining}s remaining`
-      );
+      logger.info(`Refresh rate limited for ${svcId}, ${remaining}s remaining`);
       if (timeElapsed < 30) {
         return c.redirect(`/static/${StaticFiles.OK}`, 307);
       }

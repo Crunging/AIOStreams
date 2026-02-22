@@ -1,9 +1,5 @@
 import { Context } from 'hono';
-import {
-  AIOStreams,
-  createLogger,
-  StremioTransformer,
-} from '@aiostreams/core';
+import { AIOStreams, createLogger, StremioTransformer } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
@@ -35,8 +31,7 @@ export const subtitle = async (c: Context<HonoEnv>) => {
 
     return c.json(transformer.transformSubtitles(subtitles));
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     const errors = [
       {
         title: 'Subtitles Error',

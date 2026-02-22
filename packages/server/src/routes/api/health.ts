@@ -17,7 +17,10 @@ app.get('/', async (c) => {
     return c.json(createResponse({ success: true, detail: 'OK' }));
   } catch (error: any) {
     logger.error(`Health check failed: ${error.message}`);
-    throw new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR, error.message);
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      error.message
+    );
   }
 });
 

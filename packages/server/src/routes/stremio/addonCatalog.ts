@@ -25,7 +25,7 @@ export const addonCatalog = async (c: Context<HonoEnv>) => {
   try {
     const type = c.req.param('type');
     const idRaw = c.req.param('id.json') ?? c.req.param('id');
-    const id = idRaw.replace(/\.json$/, '');
+    const id = (idRaw ?? '').replace(/\.json$/, '');
     logger.debug('Addon catalog request received', {
       type,
       id,
@@ -44,7 +44,8 @@ export const addonCatalog = async (c: Context<HonoEnv>) => {
     ];
     if (transformer.showError('addon_catalog', errors)) {
       logger.error(
-        `Unexpected error during addon catalog retrieval: ${errorMsg}`
+        `Unexpected error during addon catalog retrieval: ${errorMsg}`,
+        error
       );
       return c.json(
         transformer.transformAddonCatalog({

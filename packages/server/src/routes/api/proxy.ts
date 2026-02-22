@@ -279,7 +279,9 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
     const clientHeaders = copyHeaders(c.req.header());
 
     const isBodyRequest =
-      c.req.method === 'POST' || c.req.method === 'PUT' || c.req.method === 'PATCH';
+      c.req.method === 'POST' ||
+      c.req.method === 'PUT' ||
+      c.req.method === 'PATCH';
     const isGetRequest = c.req.method === 'GET';
 
     let sizeLimiter: Transform | undefined;
@@ -322,7 +324,10 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
             clientIp,
             connectionLimit,
           });
-          return c.redirect(`/static/${StaticFiles.CONTENT_PROXY_LIMIT_REACHED}`, 302);
+          return c.redirect(
+            `/static/${StaticFiles.CONTENT_PROXY_LIMIT_REACHED}`,
+            302
+          );
         }
       }
       proxyStats
@@ -348,7 +353,9 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
     let method = c.req.method as Dispatcher.HttpMethod;
 
     // @ts-ignore
-    const bodyBuffer = isBodyRequest ? Buffer.from(await c.req.arrayBuffer()) : undefined;
+    const bodyBuffer = isBodyRequest
+      ? Buffer.from(await c.req.arrayBuffer())
+      : undefined;
 
     while (redirectCount < maxRedirects) {
       const urlObj = new URL(currentUrl);
@@ -406,7 +413,10 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
 
       // Only attach body if we still have the original method (not downgraded to GET by redirect)
       // and it is a body-compatible method
-      const upstreamBody = (method === 'POST' || method === 'PUT' || method === 'PATCH') ? bodyBuffer : undefined;
+      const upstreamBody =
+        method === 'POST' || method === 'PUT' || method === 'PATCH'
+          ? bodyBuffer
+          : undefined;
 
       upstreamResponse = await request(currentUrl, {
         method: method,
@@ -421,11 +431,11 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
         // Drain the response body to avoid leaks before following redirect
         try {
           // Dump the body if we are redirecting
-           if (!upstreamResponse.body.destroyed) {
-             for await (const _chunk of upstreamResponse.body) {
-               // drain
-             }
-           }
+          if (!upstreamResponse.body.destroyed) {
+            for await (const _chunk of upstreamResponse.body) {
+              // drain
+            }
+          }
         } catch {}
 
         redirectCount++;
@@ -486,7 +496,7 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
     if (data.responseHeaders) {
       Object.assign(responseHeaders, data.responseHeaders);
     }
-    
+
     for (const [key, value] of Object.entries(responseHeaders)) {
       c.header(key, Array.isArray(value) ? value.join(', ') : value);
     }
@@ -510,7 +520,7 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
         logger.debug(`[${requestId}] Upstream body already destroyed`);
         return c.body(null);
       }
-      
+
       return stream(c, async (stream) => {
         stream.onAbort(() => {
           if (!upstreamResponse!.body.destroyed) {
@@ -532,7 +542,6 @@ app.all('/:encryptedAuthAndData/:filename?', async (c) => {
         }
       });
     }
-
   } catch (error) {
     const totalDuration = Date.now() - startTime;
 
