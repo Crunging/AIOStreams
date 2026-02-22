@@ -39,6 +39,9 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
 
   // First check - validate path has two components followed by valid resource
   const path = c.req.path;
+  // Resource segment is at index 4 for both:
+  // /stremio/:uuid/:encryptedPassword/:resource
+  // /chilllink/:uuid/:encryptedPassword/:resource
   const resource = path.split('/')[4];
 
   if (!resource || !VALID_RESOURCES.includes(resource)) {
@@ -64,7 +67,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
   // decrypt the encrypted password
   const { success: successfulDecryption, data: decryptedPassword } =
     decryptString(encryptedPassword);
-  if (!successfulDecryption) {
+  if (!successfulDecryption || !decryptedPassword) {
     if (constants.RESOURCES.includes(resource as Resource)) {
       return c.json(
         StremioTransformer.createDynamicError(resource as Resource, {
@@ -76,7 +79,19 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
   }
 
   // Get and validate user data (this also implicitly checks if the user exists)
-  let userData = await UserRepository.getUser(uuid, decryptedPassword);
+  let userData: any;
+  try {
+    userData = await UserRepository.getUser(uuid, decryptedPassword);
+  } catch (error: any) {
+    if (constants.RESOURCES.includes(resource as Resource)) {
+      return c.json(
+        StremioTransformer.createDynamicError(resource as Resource, {
+          errorDescription: 'Invalid user or password',
+        })
+      );
+    }
+    throw error;
+  }
 
   if (!userData) {
     if (constants.RESOURCES.includes(resource as Resource)) {
@@ -95,151 +110,165 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
 
   if (resource !== 'configure') {
     // Parallelize sync calls for better performance
-    const syncPromises = [
+    // List of sync operations to perform
+    const syncConfig = [
       // Regex Syncs
-      RegexAccess.syncRegexPatterns(
-        userData.syncedPreferredRegexUrls,
-        userData.preferredRegexPatterns || [],
-        userData,
-        (regex) => regex,
-        (regex) => regex.pattern
-      )
-        .then((res) => (userData!.preferredRegexPatterns = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync preferred regex patterns: ${e.message}`, e)
+      {
+        name: 'preferredRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
+          userData.syncedPreferredRegexUrls,
+          userData.preferredRegexPatterns || [],
+          userData,
+          (regex) => regex,
+          (regex) => regex.pattern
         ),
-
-      RegexAccess.syncRegexPatterns(
-        userData.syncedExcludedRegexUrls,
-        userData.excludedRegexPatterns || [],
-        userData,
-        (regex) => regex.pattern,
-        (pattern) => pattern
-      )
-        .then((res) => (userData!.excludedRegexPatterns = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync excluded regex patterns: ${e.message}`, e)
+      },
+      {
+        name: 'excludedRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
+          userData.syncedExcludedRegexUrls,
+          userData.excludedRegexPatterns || [],
+          userData,
+          (regex) => regex.pattern,
+          (pattern) => pattern
         ),
-
-      RegexAccess.syncRegexPatterns(
-        userData.syncedRequiredRegexUrls,
-        userData.requiredRegexPatterns || [],
-        userData,
-        (regex) => regex.pattern,
-        (pattern) => pattern
-      )
-        .then((res) => (userData!.requiredRegexPatterns = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync required regex patterns: ${e.message}`, e)
+      },
+      {
+        name: 'requiredRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
+          userData.syncedRequiredRegexUrls,
+          userData.requiredRegexPatterns || [],
+          userData,
+          (regex) => regex.pattern,
+          (pattern) => pattern
         ),
-
-      RegexAccess.syncRegexPatterns(
-        userData.syncedIncludedRegexUrls,
-        userData.includedRegexPatterns || [],
-        userData,
-        (regex) => regex.pattern,
-        (pattern) => pattern
-      )
-        .then((res) => (userData!.includedRegexPatterns = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync included regex patterns: ${e.message}`, e)
+      },
+      {
+        name: 'includedRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
+          userData.syncedIncludedRegexUrls,
+          userData.includedRegexPatterns || [],
+          userData,
+          (regex) => regex.pattern,
+          (pattern) => pattern
         ),
-
-      RegexAccess.syncRegexPatterns(
-        userData.syncedRankedRegexUrls,
-        userData.rankedRegexPatterns || [],
-        userData,
-        (regex) => ({
-          pattern: regex.pattern,
-          name: regex.name,
-          score: regex.score || 0,
-        }),
-        (item) => item.pattern
-      )
-        .then((res) => (userData!.rankedRegexPatterns = res))
-        .catch((e) =>
-          logger.error(`Failed to sync ranked regex patterns: ${e.message}`, e)
+      },
+      {
+        name: 'rankedRegexPatterns',
+        critical: true,
+        promise: RegexAccess.syncRegexPatterns(
+          userData.syncedRankedRegexUrls,
+          userData.rankedRegexPatterns || [],
+          userData,
+          (regex: any) => ({
+            pattern: regex.pattern,
+            name: regex.name,
+            score: regex.score || 0,
+          }),
+          (item: any) => item.pattern
         ),
-
+      },
       // Stream Expression Syncs
-      SelAccess.syncStreamExpressions(
-        userData.syncedPreferredStreamExpressionUrls,
-        userData.preferredStreamExpressions || [],
-        userData,
-        (item) => ({
-          expression: item.expression,
-          enabled: item.enabled ?? true,
-        }),
-        (item) => item.expression
-      )
-        .then((res) => (userData!.preferredStreamExpressions = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync preferred stream expressions: ${e.message}`, e)
+      {
+        name: 'preferredStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedPreferredStreamExpressionUrls,
+          userData.preferredStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
         ),
-
-      SelAccess.syncStreamExpressions(
-        userData.syncedExcludedStreamExpressionUrls,
-        userData.excludedStreamExpressions || [],
-        userData,
-        (item) => ({
-          expression: item.expression,
-          enabled: item.enabled ?? true,
-        }),
-        (item) => item.expression
-      )
-        .then((res) => (userData!.excludedStreamExpressions = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync excluded stream expressions: ${e.message}`, e)
+      },
+      {
+        name: 'excludedStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedExcludedStreamExpressionUrls,
+          userData.excludedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
         ),
-
-      SelAccess.syncStreamExpressions(
-        userData.syncedRequiredStreamExpressionUrls,
-        userData.requiredStreamExpressions || [],
-        userData,
-        (item) => ({
-          expression: item.expression,
-          enabled: item.enabled ?? true,
-        }),
-        (item) => item.expression
-      )
-        .then((res) => (userData!.requiredStreamExpressions = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync required stream expressions: ${e.message}`, e)
+      },
+      {
+        name: 'requiredStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedRequiredStreamExpressionUrls,
+          userData.requiredStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
         ),
-
-      SelAccess.syncStreamExpressions(
-        userData.syncedIncludedStreamExpressionUrls,
-        userData.includedStreamExpressions || [],
-        userData,
-        (item) => ({
-          expression: item.expression,
-          enabled: item.enabled ?? true,
-        }),
-        (item) => item.expression
-      )
-        .then((res) => (userData!.includedStreamExpressions = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync included stream expressions: ${e.message}`, e)
+      },
+      {
+        name: 'includedStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedIncludedStreamExpressionUrls,
+          userData.includedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
         ),
-
-      SelAccess.syncStreamExpressions(
-        userData.syncedRankedStreamExpressionUrls,
-        userData.rankedStreamExpressions || [],
-        userData,
-        (item) => ({
-          expression: item.expression,
-          score: item.score || 0,
-          enabled: item.enabled ?? true,
-        }),
-        (item) => item.expression
-      )
-        .then((res) => (userData!.rankedStreamExpressions = res))
-        .catch((e) => {
-          logger.error(`Failed to sync ranked stream expressions: ${e.message}`, e);
-        }),
+      },
+      {
+        name: 'rankedStreamExpressions',
+        critical: true,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedRankedStreamExpressionUrls,
+          userData.rankedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            score: item.score || 0,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
     ];
 
-    await Promise.all(syncPromises);
+    const syncResults = await Promise.allSettled(
+      syncConfig.map((s) => s.promise)
+    );
+
+    syncResults.forEach((result, index) => {
+      const config = syncConfig[index];
+      if (result.status === 'fulfilled') {
+        (userData as any)[config.name] = result.value;
+      } else {
+        const error = result.reason;
+        const msg = `Failed to sync ${config.name}: ${error.message}`;
+        if (config.critical) {
+          logger.error(msg, error);
+          throw new APIError(
+            constants.ErrorCode.USER_INVALID_CONFIG,
+            undefined,
+            msg
+          );
+        } else {
+          logger.warn(msg, error);
+        }
+      }
+    });
 
     try {
       userData = await validateConfig(userData, {
