@@ -61,22 +61,9 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
     uuid = uuidOrAlias;
   }
 
-  // Check if user exists
-  const userExists = await UserRepository.checkUserExists(uuid);
-  if (!userExists) {
-    if (constants.RESOURCES.includes(resource as Resource)) {
-      return c.json(
-        StremioTransformer.createDynamicError(resource as Resource, {
-          errorDescription: 'User not found',
-        })
-      );
-    }
-    throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
-  }
-
   // decrypt the encrypted password
   const { success: successfulDecryption, data: decryptedPassword } =
-    decryptString(encryptedPassword!);
+    decryptString(encryptedPassword);
   if (!successfulDecryption) {
     if (constants.RESOURCES.includes(resource as Resource)) {
       return c.json(
@@ -88,14 +75,14 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
     throw new APIError(constants.ErrorCode.ENCRYPTION_ERROR);
   }
 
-  // Get and validate user data
+  // Get and validate user data (this also implicitly checks if the user exists)
   let userData = await UserRepository.getUser(uuid, decryptedPassword);
 
   if (!userData) {
     if (constants.RESOURCES.includes(resource as Resource)) {
       return c.json(
         StremioTransformer.createDynamicError(resource as Resource, {
-          errorDescription: 'Invalid password',
+          errorDescription: 'Invalid user or password',
         })
       );
     }
@@ -119,7 +106,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.preferredRegexPatterns = res))
         .catch((e) =>
-          logger.warn(`Failed to sync preferred regex patterns: ${e.message}`)
+          logger.warn(`Failed to sync preferred regex patterns: ${e.message}`, e)
         ),
 
       RegexAccess.syncRegexPatterns(
@@ -131,7 +118,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.excludedRegexPatterns = res))
         .catch((e) =>
-          logger.warn(`Failed to sync excluded regex patterns: ${e.message}`)
+          logger.warn(`Failed to sync excluded regex patterns: ${e.message}`, e)
         ),
 
       RegexAccess.syncRegexPatterns(
@@ -143,7 +130,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.requiredRegexPatterns = res))
         .catch((e) =>
-          logger.warn(`Failed to sync required regex patterns: ${e.message}`)
+          logger.warn(`Failed to sync required regex patterns: ${e.message}`, e)
         ),
 
       RegexAccess.syncRegexPatterns(
@@ -155,7 +142,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.includedRegexPatterns = res))
         .catch((e) =>
-          logger.warn(`Failed to sync included regex patterns: ${e.message}`)
+          logger.warn(`Failed to sync included regex patterns: ${e.message}`, e)
         ),
 
       RegexAccess.syncRegexPatterns(
@@ -171,7 +158,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.rankedRegexPatterns = res))
         .catch((e) =>
-          logger.warn(`Failed to sync ranked regex patterns: ${e.message}`)
+          logger.error(`Failed to sync ranked regex patterns: ${e.message}`, e)
         ),
 
       // Stream Expression Syncs
@@ -187,9 +174,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.preferredStreamExpressions = res))
         .catch((e) =>
-          logger.warn(
-            `Failed to sync preferred stream expressions: ${e.message}`
-          )
+          logger.warn(`Failed to sync preferred stream expressions: ${e.message}`, e)
         ),
 
       SelAccess.syncStreamExpressions(
@@ -204,9 +189,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.excludedStreamExpressions = res))
         .catch((e) =>
-          logger.warn(
-            `Failed to sync excluded stream expressions: ${e.message}`
-          )
+          logger.warn(`Failed to sync excluded stream expressions: ${e.message}`, e)
         ),
 
       SelAccess.syncStreamExpressions(
@@ -221,9 +204,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.requiredStreamExpressions = res))
         .catch((e) =>
-          logger.warn(
-            `Failed to sync required stream expressions: ${e.message}`
-          )
+          logger.warn(`Failed to sync required stream expressions: ${e.message}`, e)
         ),
 
       SelAccess.syncStreamExpressions(
@@ -238,9 +219,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
       )
         .then((res) => (userData!.includedStreamExpressions = res))
         .catch((e) =>
-          logger.warn(
-            `Failed to sync included stream expressions: ${e.message}`
-          )
+          logger.warn(`Failed to sync included stream expressions: ${e.message}`, e)
         ),
 
       SelAccess.syncStreamExpressions(
@@ -255,9 +234,9 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
         (item) => item.expression
       )
         .then((res) => (userData!.rankedStreamExpressions = res))
-        .catch((e) =>
-          logger.warn(`Failed to sync ranked stream expressions: ${e.message}`)
-        ),
+        .catch((e) => {
+          logger.error(`Failed to sync ranked stream expressions: ${e.message}`, e);
+        }),
     ];
 
     await Promise.all(syncPromises);
