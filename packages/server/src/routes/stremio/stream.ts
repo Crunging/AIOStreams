@@ -41,7 +41,7 @@ export const stream = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    const idRaw = c.req.param('id');
+    const idRaw = c.req.param('id.json') ?? c.req.param('id');
     const id = (idRaw ?? '').replace(/\.json$/, '');
 
     const aiostreams = await new AIOStreams(userData).initialise();
