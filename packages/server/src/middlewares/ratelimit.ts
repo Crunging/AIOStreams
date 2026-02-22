@@ -5,7 +5,8 @@ import {
   APIError,
   StremioTransformer,
 } from '@aiostreams/core';
-import { rateLimiter, RedisStore, RedisClient } from 'hono-rate-limiter';
+import { rateLimiter } from 'hono-rate-limiter';
+import { RedisStore, RedisClient } from '@hono-rate-limiter/redis';
 import { createClient } from 'redis';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { HonoEnv } from '../types.js';
@@ -59,13 +60,18 @@ const createRateLimiter = (
       }
     : undefined;
 
+  const getRateLimitIp = (c: Context<HonoEnv>) => {
+    const info = getConnInfo(c);
+    return c.get('userIp') ?? info.remote?.address ?? 'unknown';
+  };
+
   return rateLimiter({
     windowMs,
     limit: maxRequests,
     standardHeaders: 'draft-6',
+    // Keep key/log IP selection consistent
     keyGenerator: (c: Context<HonoEnv>) => {
-      const info = getConnInfo(c);
-      const ip = c.get('userIp') ?? info.remote?.address ?? 'unknown';
+      const ip = getRateLimitIp(c);
       return `${prefix}:${ip}`;
     },
     store: redisClientAdapter
@@ -75,8 +81,7 @@ const createRateLimiter = (
         })
       : undefined, // undefined falls back to MemoryStore
     handler: (c: Context<HonoEnv>) => {
-      const info = getConnInfo(c);
-      const ip = c.get('userIp') ?? info.remote?.address ?? 'unknown';
+      const ip = getRateLimitIp(c);
       logger.warn(`${prefix} rate limit exceeded for IP: ${ip}`);
 
       const stremioResourceRequestRegex =

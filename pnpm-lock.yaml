@@ -303,6 +303,9 @@ importers:
       '@aiostreams/core':
         specifier: workspace:*
         version: link:../core
+      '@hono-rate-limiter/redis':
+        specifier: ^0.1.4
+        version: 0.1.4(hono-rate-limiter@0.5.3(hono@4.11.10))
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.9(hono@4.11.10)
@@ -772,6 +775,11 @@ packages:
     engines: {node: '>=10'}
     peerDependencies:
       tailwindcss: ^3.0 || ^4.0
+
+  '@hono-rate-limiter/redis@0.1.4':
+    resolution: {integrity: sha512-RSrVX5N2Oo/xXApskegu667cBVHyr8RXGWnbRDGjU2py8pN4BttEKSHA0iKi3BAwh1xSkENgDRng4tpFD9DbKg==}
+    peerDependencies:
+      hono-rate-limiter: ^0.2.1
 
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
@@ -5306,6 +5314,10 @@ snapshots:
   '@headlessui/tailwindcss@0.2.2(tailwindcss@3.4.19(ts-node@10.9.2(@types/node@20.19.32)(typescript@5.9.3)))':
     dependencies:
       tailwindcss: 3.4.19(ts-node@10.9.2(@types/node@20.19.32)(typescript@5.9.3))
+
+  '@hono-rate-limiter/redis@0.1.4(hono-rate-limiter@0.5.3(hono@4.11.10))':
+    dependencies:
+      hono-rate-limiter: 0.5.3(hono@4.11.10)
 
   '@hono/node-server@1.19.9(hono@4.11.10)':
     dependencies:
