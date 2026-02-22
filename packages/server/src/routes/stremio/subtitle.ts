@@ -20,18 +20,14 @@ export const subtitle = async (c: Context<HonoEnv>) => {
   const transformer = new StremioTransformer(userData);
   try {
     const type = c.req.param('type');
-    let idRaw = c.req.param('id');
-    let extraRaw = c.req.param('extra');
-    
-    let id: string = '';
-    let extra: string | undefined = undefined;
-    
-    if (extraRaw !== undefined) {
-      extra = extraRaw.replace(/\.json$/, '');
-      id = idRaw;
-    } else if (idRaw !== undefined) {
-      id = idRaw.replace(/\.json$/, '');
-    }
+    const idRaw = c.req.param('id');
+    const extraRaw = c.req.param('extra');
+
+    const id = (idRaw ?? '').replace(/\.json$/, '');
+    const extra =
+      extraRaw && extraRaw.length > 0
+        ? extraRaw.replace(/\.json$/, '')
+        : undefined;
 
     const aiostreams = new AIOStreams(userData);
     await aiostreams.initialise();
@@ -41,7 +37,7 @@ export const subtitle = async (c: Context<HonoEnv>) => {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
-    let errors = [
+    const errors = [
       {
         title: 'Subtitles Error',
         description: errorMessage,

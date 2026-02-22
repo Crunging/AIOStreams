@@ -1,11 +1,9 @@
 import { Context } from 'hono';
 import {
   AIOStreams,
-  AIOStreamResponse,
   Env,
   createLogger,
   StremioTransformer,
-  IdParser,
 } from '@aiostreams/core';
 import { HonoEnv } from '../../types.js';
 
@@ -35,8 +33,8 @@ export const stream = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    const idRaw = c.req.param('id.json') || c.req.param('id') || '';
-    const id = idRaw.replace(/\.json$/, '');
+    const idRaw = c.req.param('id');
+    const id = (idRaw ?? '').replace(/\.json$/, '');
 
     const aiostreams = await new AIOStreams(userData).initialise();
 
@@ -59,7 +57,7 @@ export const stream = async (c: Context<HonoEnv>) => {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
-    let errors = [
+    const errors = [
       {
         description: errorMessage,
       },
