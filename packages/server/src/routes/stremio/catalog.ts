@@ -21,8 +21,8 @@ export const catalog = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    const idRaw = c.req.param('id');
-    const extraRaw = c.req.param('extra');
+    const idRaw = c.req.param('id.json') ?? c.req.param('id');
+    const extraRaw = c.req.param('extra.json') ?? c.req.param('extra');
     
     const normalizeParam = (value?: string) =>
       value?.replace(/\.json$/, '') ?? '';
