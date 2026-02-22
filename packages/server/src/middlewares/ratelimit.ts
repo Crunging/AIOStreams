@@ -8,6 +8,8 @@ import {
 import { rateLimiter, RedisStore, RedisClient } from 'hono-rate-limiter';
 import { createClient } from 'redis';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import { HonoEnv } from '../types.js';
+import { Context } from 'hono';
 
 const logger = createLogger('server');
 
@@ -43,8 +45,15 @@ const createRateLimiter = (
   const redisClientAdapter: RedisClient | undefined = redisClient
     ? {
         scriptLoad: (lua: string) => redisClient!.scriptLoad(lua),
-        evalsha: (sha: string, keys: string[], args: unknown[]) =>
-          redisClient!.evalSha(sha, { keys, arguments: args as string[] }) as any,
+        evalsha: <TArgs extends unknown[], TData = unknown>(
+          sha: string,
+          keys: string[],
+          args: TArgs
+        ) =>
+          redisClient!.evalSha(sha, {
+            keys,
+            arguments: args as unknown as string[],
+          }) as Promise<TData>,
         decr: (key: string) => redisClient!.decr(key),
         del: (key: string) => redisClient!.del(key),
       }
@@ -54,20 +63,20 @@ const createRateLimiter = (
     windowMs,
     limit: maxRequests,
     standardHeaders: 'draft-6',
-    keyGenerator: (c) => {
+    keyGenerator: (c: Context<HonoEnv>) => {
       const info = getConnInfo(c);
-      const ip = info.remote?.address || 'unknown';
+      const ip = (c.get('userIp') as string) ?? info.remote?.address ?? 'unknown';
       return `${prefix}:${ip}`;
     },
     store: redisClientAdapter
-      ? new RedisStore({
+      ? new RedisStore<HonoEnv>({
           client: redisClientAdapter,
           prefix: `aiostreams:ratelimit:${prefix}:`,
         })
       : undefined, // undefined falls back to MemoryStore
-    handler: (c) => {
+    handler: (c: Context<HonoEnv>) => {
       const info = getConnInfo(c);
-      const ip = info.remote?.address || 'unknown';
+      const ip = (c.get('userIp') as string) ?? info.remote?.address ?? 'unknown';
       logger.warn(`${prefix} rate limit exceeded for IP: ${ip}`);
 
       const stremioResourceRequestRegex =
