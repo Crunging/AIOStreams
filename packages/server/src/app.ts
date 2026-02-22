@@ -94,6 +94,12 @@ const gdriveCallbackHtml = fs.readFileSync(
   path.join(frontendRoot, 'oauth/callback/gdrive.html'),
   'utf-8'
 );
+const logoPng = fs.existsSync(path.join(frontendRoot, 'logo.png'))
+  ? fs.readFileSync(path.join(frontendRoot, 'logo.png'))
+  : null;
+const logoAltPng = fs.existsSync(path.join(frontendRoot, 'logo_alt.png'))
+  ? fs.readFileSync(path.join(frontendRoot, 'logo_alt.png'))
+  : null;
 
 // Middlewares
 app.use('*', ipMiddleware);
@@ -179,12 +185,9 @@ app.route('/builtins', builtins);
 
 // Static files and other routes
 app.get('/logo.png', staticRateLimiter, (c) => {
-  const filePath = path.resolve(
-    frontendRoot,
-    Env.ALTERNATE_DESIGN ? 'logo_alt.png' : 'logo.png'
-  );
-  if (filePath.startsWith(frontendRoot) && fs.existsSync(filePath)) {
-    return c.body(fs.readFileSync(filePath), 200, {
+  const logo = Env.ALTERNATE_DESIGN ? logoAltPng : logoPng;
+  if (logo) {
+    return c.body(logo, 200, {
       'Content-Type': 'image/png',
     });
   }
