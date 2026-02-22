@@ -42,9 +42,7 @@ export const errorMiddleware = (err: Error, c: Context<HonoEnv>) => {
   ) {
     const stremioResourceRequestRegex =
       /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9+/=]+\/(stream|meta|addon_catalog|subtitles|catalog)\/[^/]+\/[^/]+(?:\/[^/]+)?\.json\/?$/;
-    const resource = stremioResourceRequestRegex.exec(
-      new URL(c.req.url).pathname
-    );
+    const resource = stremioResourceRequestRegex.exec(c.req.path);
     if (resource) {
       return c.json(
         StremioTransformer.createDynamicError(

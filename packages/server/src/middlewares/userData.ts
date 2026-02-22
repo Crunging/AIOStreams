@@ -39,7 +39,7 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
 
   // First check - validate path has two components followed by valid resource
   const resourceRegex = new RegExp(`/(${VALID_RESOURCES.join('|')})`);
-  const path = new URL(c.req.url).pathname;
+  const path = c.req.path;
 
   const resourceMatch = path.match(resourceRegex);
   if (!resourceMatch) {
