@@ -210,6 +210,14 @@ app.use(
   })
 );
 
+app.get('/oauth/callback/gdrive', (c) => {
+  return gdriveCallbackHtml ? c.html(gdriveCallbackHtml) : c.notFound();
+});
+
+app.get('/', (c) => {
+  return c.redirect('/stremio/configure');
+});
+
 // serve static from frontendRoot (catch-all)
 app.use(
   '/*',
@@ -219,13 +227,7 @@ app.use(
   })
 );
 
-app.get('/oauth/callback/gdrive', (c) => {
-  return gdriveCallbackHtml ? c.html(gdriveCallbackHtml) : c.notFound();
-});
 
-app.get('/', (c) => {
-  return c.redirect('/stremio/configure');
-});
 
 // legacy route handlers
 app.get('/:config/stream/:type/:id.json', stremioStreamRateLimiter, (c) => {
