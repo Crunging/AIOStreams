@@ -28,7 +28,9 @@ export const stream = async (c: Context<HonoEnv>) => {
     Env.PROVIDE_STREAM_DATA !== undefined
       ? typeof Env.PROVIDE_STREAM_DATA === 'boolean'
         ? Env.PROVIDE_STREAM_DATA
-        : Env.PROVIDE_STREAM_DATA.includes(requestIp || '')
+        : requestIp
+          ? (Env.PROVIDE_STREAM_DATA as string[]).includes(requestIp)
+          : false
       : (c.req.header('user-agent')?.includes('AIOStreams/') ?? false);
 
   try {
