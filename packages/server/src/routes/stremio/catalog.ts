@@ -1,7 +1,6 @@
 import { Context } from 'hono';
 import {
   AIOStreams,
-  CatalogResponse,
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
@@ -51,6 +50,7 @@ export const catalog = async (c: Context<HonoEnv>) => {
         })
       );
     }
+    logger.debug(`Re-throwing suppressed catalog error: ${errorMsg}`);
     throw error;
   }
 };
