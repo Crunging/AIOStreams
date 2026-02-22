@@ -194,15 +194,6 @@ app.get('/logo.png', staticRateLimiter, (c) => {
   return c.notFound();
 });
 
-// serve static from frontendRoot
-app.use(
-  '/*',
-  staticRateLimiter,
-  serveStatic({
-    root: path.relative(process.cwd(), frontendRoot),
-  })
-);
-
 // serve static from staticRoot
 app.use(
   '/static/*',
@@ -210,6 +201,15 @@ app.use(
   serveStatic({
     root: path.relative(process.cwd(), staticRoot),
     rewriteRequestPath: (path) => path.replace(/^\/static/, ''),
+  })
+);
+
+// serve static from frontendRoot (catch-all)
+app.use(
+  '/*',
+  staticRateLimiter,
+  serveStatic({
+    root: path.relative(process.cwd(), frontendRoot),
   })
 );
 
@@ -223,10 +223,11 @@ app.get('/', (c) => {
 
 // legacy route handlers
 app.get('/:config/stream/:type/:id.json', stremioStreamRateLimiter, (c) => {
+  const url = new URL(c.req.url);
   const baseUrl =
     Env.BASE_URL ||
-    `${new URL(c.req.url).protocol}//${new URL(c.req.url).hostname}${
-      new URL(c.req.url).hostname === 'localhost' ? `:${Env.PORT}` : ''
+    `${url.protocol}//${url.hostname}${
+      url.hostname === 'localhost' ? `:${Env.PORT}` : ''
     }`;
   return c.json({
     streams: [
