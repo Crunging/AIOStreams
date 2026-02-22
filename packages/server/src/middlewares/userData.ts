@@ -38,11 +38,12 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
   }
 
   // First check - validate path has two components followed by valid resource
-  const resourceRegex = new RegExp(`/(${VALID_RESOURCES.join('|')})`);
   const path = c.req.path;
+  const resource = path
+    .split('/')
+    .find((segment) => VALID_RESOURCES.includes(segment));
 
-  const resourceMatch = path.match(resourceRegex);
-  if (!resourceMatch) {
+  if (!resource) {
     await next();
     return;
   }
@@ -61,8 +62,6 @@ export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
   } else {
     uuid = uuidOrAlias;
   }
-
-  const resource = resourceMatch[1];
 
   // Check if user exists
   const userExists = await UserRepository.checkUserExists(uuid);
