@@ -65,7 +65,7 @@ const createRateLimiter = (
     standardHeaders: 'draft-6',
     keyGenerator: (c: Context<HonoEnv>) => {
       const info = getConnInfo(c);
-      const ip = (c.get('userIp') as string) ?? info.remote?.address ?? 'unknown';
+      const ip = c.get('userIp') ?? info.remote?.address ?? 'unknown';
       return `${prefix}:${ip}`;
     },
     store: redisClientAdapter
@@ -76,7 +76,7 @@ const createRateLimiter = (
       : undefined, // undefined falls back to MemoryStore
     handler: (c: Context<HonoEnv>) => {
       const info = getConnInfo(c);
-      const ip = (c.get('userIp') as string) ?? info.remote?.address ?? 'unknown';
+      const ip = c.get('userIp') ?? info.remote?.address ?? 'unknown';
       logger.warn(`${prefix} rate limit exceeded for IP: ${ip}`);
 
       const stremioResourceRequestRegex =

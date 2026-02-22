@@ -18,7 +18,7 @@ export const internalMiddleware: MiddlewareHandler<HonoEnv> = async (
   const url = new URL(c.req.url);
   const path = url.pathname;
 
-  if (WHITELIST.some((p) => path.startsWith(p))) {
+  if (WHITELIST.some((p) => path === p || path.startsWith(`${p}/`))) {
     await next();
     return;
   }
