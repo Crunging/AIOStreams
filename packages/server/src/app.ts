@@ -218,17 +218,6 @@ app.get('/', (c) => {
   return c.redirect('/stremio/configure');
 });
 
-// serve static from frontendRoot (catch-all)
-app.use(
-  '/*',
-  staticRateLimiter,
-  serveStatic({
-    root: path.relative(process.cwd(), frontendRoot),
-  })
-);
-
-
-
 // legacy route handlers
 app.get('/:config/stream/:type/:id.json', stremioStreamRateLimiter, (c) => {
   const url = new URL(c.req.url);
@@ -251,6 +240,15 @@ app.get('/:config/stream/:type/:id.json', stremioStreamRateLimiter, (c) => {
 app.get('/:config/configure', (c) => {
   return c.redirect('/stremio/configure');
 });
+
+// serve static from frontendRoot (catch-all)
+app.use(
+  '/*',
+  staticRateLimiter,
+  serveStatic({
+    root: path.relative(process.cwd(), frontendRoot),
+  })
+);
 
 // 404 handler
 app.notFound((c) => {
