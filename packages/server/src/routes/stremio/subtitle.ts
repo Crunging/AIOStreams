@@ -48,7 +48,8 @@ export const subtitle = async (c: Context<HonoEnv>) => {
     ];
     if (transformer.showError('subtitles', errors)) {
       logger.error(
-        `Unexpected error during subtitle retrieval: ${errorMessage}`
+        `Unexpected error during subtitle retrieval: ${errorMessage}`,
+        error
       );
       return c.json(
         StremioTransformer.createDynamicError('subtitles', {

@@ -30,17 +30,15 @@ export const addonCatalog = async (c: Context<HonoEnv>) => {
       type,
       id,
     });
-    return c.json(
-      transformer.transformAddonCatalog(
-        await (
-          await new AIOStreams(userData).initialise()
-        ).getAddonCatalog(type, id)
-      )
-    );
+    const aiostreams = new AIOStreams(userData);
+    await aiostreams.initialise();
+    const addonCatalog = await aiostreams.getAddonCatalog(type, id);
+    return c.json(transformer.transformAddonCatalog(addonCatalog));
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     const errors = [
       {
+        title: 'Addon Catalog Error',
         description: errorMsg,
       },
     ];
