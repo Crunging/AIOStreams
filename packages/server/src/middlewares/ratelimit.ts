@@ -5,7 +5,7 @@ import {
   APIError,
   StremioTransformer,
 } from '@aiostreams/core';
-import { rateLimiter, RedisStore } from 'hono-rate-limiter';
+import { rateLimiter, RedisStore, RedisClient } from 'hono-rate-limiter';
 import { createClient } from 'redis';
 import { getConnInfo } from '@hono/node-server/conninfo';
 
@@ -40,11 +40,11 @@ const createRateLimiter = (
   }
 
   // Redis client adapter to bridge node-redis v5 with hono-rate-limiter
-  const redisClientAdapter = redisClient
+  const redisClientAdapter: RedisClient | undefined = redisClient
     ? {
         scriptLoad: (lua: string) => redisClient!.scriptLoad(lua),
         evalsha: (sha: string, keys: string[], args: unknown[]) =>
-          redisClient!.evalSha(sha, { keys, arguments: args as string[] }),
+          redisClient!.evalSha(sha, { keys, arguments: args as string[] }) as any,
         decr: (key: string) => redisClient!.decr(key),
         del: (key: string) => redisClient!.del(key),
       }
@@ -61,7 +61,7 @@ const createRateLimiter = (
     },
     store: redisClientAdapter
       ? new RedisStore({
-          client: redisClientAdapter as any,
+          client: redisClientAdapter,
           prefix: `aiostreams:ratelimit:${prefix}:`,
         })
       : undefined, // undefined falls back to MemoryStore

@@ -3,7 +3,7 @@ import { createResponse } from '../utils/responses.js';
 import { constants, Env } from '@aiostreams/core';
 import { HonoEnv } from '../types.js';
 
-const WHIELIST = ['/easynews/nzb', '/library/refresh'];
+const WHITELIST = ['/easynews/nzb', '/library/refresh'];
 
 export const internalMiddleware: MiddlewareHandler<HonoEnv> = async (
   c,
@@ -12,7 +12,7 @@ export const internalMiddleware: MiddlewareHandler<HonoEnv> = async (
   const url = new URL(c.req.url);
   const path = url.pathname;
 
-  if (WHIELIST.some((p) => path.startsWith(p))) {
+  if (WHITELIST.some((p) => path.startsWith(p))) {
     await next();
     return;
   }

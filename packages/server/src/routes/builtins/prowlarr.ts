@@ -32,7 +32,7 @@ app.get('/:encodedConfig/stream/:type/:id', async (c) => {
       encodedConfig ? JSON.parse(fromUrlSafeBase64(encodedConfig)) : undefined,
       c.get('userIp')
     );
-    const streams = await addon.getStreams(type, id!);
+    const streams = await addon.getStreams(type, id);
     return c.json({ streams });
   } catch (error) {
     logger.error('Failed to get prowlarr streams:', error);
