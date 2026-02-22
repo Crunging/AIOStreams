@@ -22,13 +22,17 @@ export const catalog = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    let id = c.req.param('id');
-    let extra = c.req.param('extra');
-
-    if (extra) {
-      extra = extra.replace(/\.json$/, '');
-    } else {
-      id = id.replace(/\.json$/, '');
+    let idRaw = c.req.param('id.json') || c.req.param('id');
+    let extraRaw = c.req.param('extra.json') || c.req.param('extra');
+    
+    let id: string = '';
+    let extra: string | undefined = undefined;
+    
+    if (extraRaw !== undefined) {
+      extra = extraRaw.replace(/\.json$/, '');
+      id = idRaw;
+    } else if (idRaw !== undefined) {
+      id = idRaw.replace(/\.json$/, '');
     }
 
     return c.json(

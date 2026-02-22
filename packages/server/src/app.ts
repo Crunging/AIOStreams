@@ -137,7 +137,7 @@ stremio.use('*', corsMiddleware);
 
 // Public routes
 stremio.get('/manifest.json', stremioManifestRateLimiter, manifest);
-stremio.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
+stremio.get('/stream/:type/:id.json', stremioStreamRateLimiter, stream);
 stremio.get('/configure', staticRateLimiter, configure);
 stremio.get('/configure.txt', staticRateLimiter, (c) => {
   return indexTxt ? c.body(indexTxt) : c.notFound();
@@ -150,15 +150,18 @@ stremioAuth.use('*', corsMiddleware);
 stremioAuth.use('*', userDataMiddleware);
 
 stremioAuth.get('/manifest.json', stremioManifestRateLimiter, manifest);
-stremioAuth.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
+stremioAuth.get('/stream/:type/:id.json', stremioStreamRateLimiter, stream);
 stremioAuth.get('/configure', staticRateLimiter, configure);
 stremioAuth.get('/configure.txt', staticRateLimiter, (c) => {
   return indexTxt ? c.body(indexTxt) : c.notFound();
 });
-stremioAuth.get('/meta/:type/:id', stremioMetaRateLimiter, meta);
-stremioAuth.get('/catalog/:type/:id/:extra?', stremioCatalogRateLimiter, catalog);
-stremioAuth.get('/subtitles/:type/:id/:extra?', stremioSubtitleRateLimiter, subtitle);
-stremioAuth.get('/addon_catalog/:type/:id/:extra?', stremioCatalogRateLimiter, addonCatalog);
+stremioAuth.get('/meta/:type/:id.json', stremioMetaRateLimiter, meta);
+stremioAuth.get('/catalog/:type/:id.json', stremioCatalogRateLimiter, catalog);
+stremioAuth.get('/catalog/:type/:id/:extra.json', stremioCatalogRateLimiter, catalog);
+stremioAuth.get('/subtitles/:type/:id.json', stremioSubtitleRateLimiter, subtitle);
+stremioAuth.get('/subtitles/:type/:id/:extra.json', stremioSubtitleRateLimiter, subtitle);
+stremioAuth.get('/addon_catalog/:type/:id.json', stremioCatalogRateLimiter, addonCatalog);
+stremioAuth.get('/addon_catalog/:type/:id/:extra.json', stremioCatalogRateLimiter, addonCatalog);
 
 app.route('/stremio', stremio);
 app.route('/stremio/:uuid/:encryptedPassword', stremioAuth);
@@ -168,7 +171,7 @@ const chillLink = new Hono<HonoEnv>();
 chillLink.use('*', corsMiddleware);
 chillLink.use('*', userDataMiddleware);
 chillLink.get('/manifest', chillLinkManifest);
-chillLink.get('/streams/:type/:id', stremioStreamRateLimiter, chillLinkStreams);
+chillLink.get('/streams/:type/:id.json', stremioStreamRateLimiter, chillLinkStreams);
 
 app.route('/chilllink/:uuid/:encryptedPassword', chillLink);
 
