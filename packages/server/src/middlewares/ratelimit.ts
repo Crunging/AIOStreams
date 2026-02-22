@@ -86,11 +86,15 @@ const createRateLimiter = (
       );
 
       if (resource) {
-        return c.json(
-          StremioTransformer.createDynamicError(resource[1] as any, {
+        const dynamicError = StremioTransformer.createDynamicError(
+          resource[1] as any,
+          {
             errorDescription: 'Rate Limit Exceeded',
-          })
+          }
         );
+        if (dynamicError) {
+          return c.json(dynamicError);
+        }
       }
 
       throw new APIError(constants.ErrorCode.RATE_LIMIT_EXCEEDED);
