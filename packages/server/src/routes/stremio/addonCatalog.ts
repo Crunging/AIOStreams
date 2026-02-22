@@ -54,6 +54,7 @@ export const addonCatalog = async (c: Context<HonoEnv>) => {
         })
       );
     }
+    logger.debug(`Re-throwing suppressed addon_catalog error: ${errorMsg}`);
     throw error;
   }
 };

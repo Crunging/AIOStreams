@@ -54,6 +54,7 @@ export const subtitle = async (c: Context<HonoEnv>) => {
         })
       );
     }
+    logger.debug(`Re-throwing suppressed subtitles error: ${errorMessage}`);
     throw error;
   }
 };

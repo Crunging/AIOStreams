@@ -81,6 +81,7 @@ export const stream = async (c: Context<HonoEnv>) => {
         })
       );
     }
+    logger.debug(`Re-throwing suppressed stream error: ${errorMessage}`);
     throw error;
   }
 };
