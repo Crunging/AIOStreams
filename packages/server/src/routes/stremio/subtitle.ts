@@ -20,8 +20,8 @@ export const subtitle = async (c: Context<HonoEnv>) => {
   const transformer = new StremioTransformer(userData);
   try {
     const type = c.req.param('type');
-    let idRaw = c.req.param('id.json') || c.req.param('id');
-    let extraRaw = c.req.param('extra.json') || c.req.param('extra');
+    let idRaw = c.req.param('id');
+    let extraRaw = c.req.param('extra');
     
     let id: string = '';
     let extra: string | undefined = undefined;
@@ -43,6 +43,7 @@ export const subtitle = async (c: Context<HonoEnv>) => {
       error instanceof Error ? error.message : 'Unknown error';
     let errors = [
       {
+        title: 'Subtitles Error',
         description: errorMessage,
       },
     ];

@@ -21,8 +21,8 @@ export const catalog = async (c: Context<HonoEnv>) => {
 
   try {
     const type = c.req.param('type');
-    let idRaw = c.req.param('id.json') || c.req.param('id');
-    let extraRaw = c.req.param('extra.json') || c.req.param('extra');
+    const idRaw = c.req.param('id');
+    const extraRaw = c.req.param('extra');
     
     const normalizeParam = (value?: string) =>
       value?.replace(/\.json$/, '') ?? '';
@@ -37,6 +37,7 @@ export const catalog = async (c: Context<HonoEnv>) => {
     const errorMsg = error instanceof Error ? error.message : String(error);
     const errors = [
       {
+        title: 'Catalog Error',
         description: errorMsg,
       },
     ];
