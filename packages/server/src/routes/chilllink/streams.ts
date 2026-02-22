@@ -63,7 +63,7 @@ export const streams = async (c: Context<HonoEnv>) => {
       )
     );
   } catch (error) {
-    let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let errorMessage = error instanceof Error ? error.message : String(error);
     let errors = [
       {
         description: errorMessage,

@@ -61,7 +61,7 @@ export const meta = async (c: Context<HonoEnv>) => {
     }
     return c.json(transformed);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : String(error);
     const errors = [{ description: errorMessage }];
     if (transformer.showError('meta', errors)) {
       logger.error(`Error in meta route: ${errorMessage}`);

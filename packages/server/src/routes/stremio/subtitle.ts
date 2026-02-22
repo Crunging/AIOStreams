@@ -39,8 +39,8 @@ export const subtitle = async (c: Context<HonoEnv>) => {
 
     return c.json(transformer.transformSubtitles(subtitles));
   } catch (error) {
-    let errorMessage =
-      error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
     let errors = [
       {
         title: 'Subtitles Error',
