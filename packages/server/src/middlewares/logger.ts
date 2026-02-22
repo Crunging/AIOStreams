@@ -1,50 +1,53 @@
-import { Request, Response, NextFunction } from 'express';
+import { MiddlewareHandler } from 'hono';
 import {
   createLogger,
   getTimeTakenSincePoint,
   maskSensitiveInfo,
   makeUrlLogSafe,
 } from '@aiostreams/core';
+import { HonoEnv } from '../types.js';
 
 const logger = createLogger('server');
 
-export const loggerMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const loggerMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
   const startTime = Date.now();
+  const url = c.req.url;
+  const method = c.req.method;
+  const userIp = c.get('userIp');
+  const requestIp = c.get('requestIp');
 
   // Log incoming request
   logger.http({
     type: 'request',
-    method: req.method,
-    path: makeUrlLogSafe(req.originalUrl),
-    query: Object.keys(req.query).length ? req.query : undefined,
-    ip: req.userIp ? maskSensitiveInfo(req.userIp) : undefined,
-    contentType: req.get('content-type'),
-    userAgent: req.get('user-agent'),
-    formatted: `${req.method} ${makeUrlLogSafe(req.originalUrl)}${req.userIp ? ` - u:${maskSensitiveInfo(req.userIp)}` : ''}${req.requestIp ? ` - r:${maskSensitiveInfo(req.requestIp)}` : ''} - ${req.get('content-type')} - ${req.get('user-agent')}`,
+    method: method,
+    path: makeUrlLogSafe(url),
+    query: Object.fromEntries(
+      Object.entries(c.req.query()).map(([k, v]) => {
+        if (k === 'password' || k === 'apiKey') return [k, '****'];
+        return [k, v];
+      })
+    ),
+    ip: userIp ? maskSensitiveInfo(userIp) : undefined,
+    contentType: c.req.header('content-type'),
+    userAgent: c.req.header('user-agent'),
+    formatted: `${method} ${makeUrlLogSafe(url)}${userIp ? ` - u:${maskSensitiveInfo(userIp)}` : ''}${requestIp ? ` - r:${maskSensitiveInfo(requestIp)}` : ''} - ${c.req.header('content-type')} - ${c.req.header('user-agent')}`,
   });
 
-  // Capture response finish event
-  res.on('finish', () => {
-    // Calculate duration after response is sent
-    const duration = getTimeTakenSincePoint(startTime);
+  await next();
 
-    // Log response details
-    logger.http({
-      type: 'response',
-      method: req.method,
-      path: makeUrlLogSafe(req.originalUrl),
-      statusCode: res.statusCode,
-      duration,
-      ip: req.userIp ? maskSensitiveInfo(req.userIp) : undefined,
-      contentType: res.get('content-type'),
-      contentLength: res.get('content-length'),
-      formatted: `${req.method} ${makeUrlLogSafe(req.originalUrl)}${req.userIp ? ` - u: ${maskSensitiveInfo(req.userIp)}` : ''}${req.requestIp ? ` - r: ${maskSensitiveInfo(req.requestIp)}` : ''} - Response: ${res.statusCode} - ${duration}`,
-    });
+  // Calculate duration after response is sent
+  const duration = getTimeTakenSincePoint(startTime);
+
+  // Log response details
+  logger.http({
+    type: 'response',
+    method: method,
+    path: makeUrlLogSafe(url),
+    statusCode: c.res.status,
+    duration,
+    ip: userIp ? maskSensitiveInfo(userIp) : undefined,
+    contentType: c.res.headers.get('content-type') || undefined,
+    contentLength: c.res.headers.get('content-length') || undefined,
+    formatted: `${method} ${makeUrlLogSafe(url)}${userIp ? ` - u: ${maskSensitiveInfo(userIp)}` : ''}${requestIp ? ` - r: ${maskSensitiveInfo(requestIp)}` : ''} - Response: ${c.res.status} - ${duration}`,
   });
-
-  next();
 };

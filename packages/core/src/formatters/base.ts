@@ -892,7 +892,7 @@ export abstract class BaseFormatter {
           // Extract the content from remove(['"]...['"])
           const content = _mod.substring(8, _mod.length - 2);
 
-          if (content) return variable.replaceAll(content,'');
+          if (content) return variable.replaceAll(content, '');
         }
         case mod.startsWith('truncate(') && mod.endsWith(')'): {
           // Extract N from truncate(N)

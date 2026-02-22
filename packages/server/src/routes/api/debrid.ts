@@ -1,15 +1,13 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import {
   APIError,
   constants,
   createLogger,
-  formatZodError,
   DebridError,
   PlaybackInfoSchema,
   getDebridService,
   ServiceAuthSchema,
   fromUrlSafeBase64,
-  Cache,
   PlaybackInfo,
   ServiceAuth,
   decryptString,
@@ -17,37 +15,37 @@ import {
   fileInfoStore,
   TitleMetadata,
   FileInfoSchema,
-  getSimpleTextHash,
   FileInfo,
   maskSensitiveInfo,
 } from '@aiostreams/core';
 import { ZodError } from 'zod';
 import { StaticFiles } from '../../app.js';
 import { corsMiddleware } from '../../middlewares/cors.js';
-const router: Router = Router();
+import { HonoEnv } from '../../types.js';
+
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.use(corsMiddleware);
+app.use('*', corsMiddleware);
 
 // block HEAD requests
-router.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.method === 'HEAD') {
-    res.status(405).send('Method not allowed');
-  } else {
-    next();
+app.use('*', async (c, next) => {
+  if (c.req.method === 'HEAD') {
+    return c.text('Method not allowed', 405);
   }
+  await next();
 });
 
-router.get(
+app.get(
   '/playback/:encryptedStoreAuth/:fileInfo/:metadataId/:filename',
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (c) => {
     try {
       const {
         encryptedStoreAuth,
         fileInfo: encodedFileInfo,
         metadataId,
         filename,
-      } = req.params;
+      } = c.req.param();
       if (!encodedFileInfo || !metadataId || !filename) {
         throw new APIError(
           constants.ErrorCode.BAD_REQUEST,
@@ -70,14 +68,11 @@ router.get(
             error,
             fileInfoStoreAvailable: fileInfoStore() ? true : false,
           });
-          next(
-            new APIError(
-              constants.ErrorCode.BAD_REQUEST,
-              undefined,
-              'Failed to parse file info and not found in store.'
-            )
+          throw new APIError(
+            constants.ErrorCode.BAD_REQUEST,
+            undefined,
+            'Failed to parse file info and not found in store.'
           );
-          return;
         }
       }
 
@@ -150,7 +145,7 @@ router.get(
       const debridInterface = getDebridService(
         storeAuth.id,
         storeAuth.credential,
-        req.userIp
+        c.get('userIp')
       );
 
       let streamUrl: string | undefined;
@@ -204,33 +199,29 @@ router.get(
           );
         }
 
-        res.redirect(307, `/static/${staticFile}`);
-        return;
+        return c.redirect(`/static/${staticFile}`, 307);
       }
 
       if (!streamUrl) {
-        res.redirect(307, `/static/${StaticFiles.DOWNLOADING}`);
-        return;
+        return c.redirect(`/static/${StaticFiles.DOWNLOADING}`, 307);
       }
 
-      res.redirect(307, streamUrl);
+      return c.redirect(streamUrl, 307);
     } catch (error: any) {
       if (error instanceof APIError || error instanceof ZodError) {
-        next(error);
+        throw error;
       } else {
         logger.error(
           `Got unexpected error during debrid resolve: ${error.message}`
         );
-        next(
-          new APIError(
-            constants.ErrorCode.INTERNAL_SERVER_ERROR,
-            undefined,
-            error.message
-          )
+        throw new APIError(
+          constants.ErrorCode.INTERNAL_SERVER_ERROR,
+          undefined,
+          error.message
         );
       }
     }
   }
 );
 
-export default router;
+export default app;

@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   APIError,
@@ -6,19 +6,22 @@ import {
   createLogger,
   UserRepository,
 } from '@aiostreams/core';
-const router: Router = Router();
+import { HonoEnv } from '../../types.js';
+
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+app.get('/', async (c) => {
   try {
     await UserRepository.getUserCount();
-    res.status(200).json(createResponse({ success: true, detail: 'OK' }));
+    return c.json(createResponse({ success: true, detail: 'OK' }));
   } catch (error: any) {
     logger.error(`Health check failed: ${error.message}`);
-    next(
-      new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR, error.message)
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      error.message
     );
   }
 });
 
-export default router;
+export default app;

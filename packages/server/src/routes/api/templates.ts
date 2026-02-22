@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   APIError,
@@ -6,26 +6,23 @@ import {
   createLogger,
   TemplateManager,
 } from '@aiostreams/core';
-import fs from 'fs/promises';
-import path from 'path';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+app.get('/', async (c) => {
   try {
     const templates = TemplateManager.getTemplates();
-    res.json(createResponse({ success: true, data: templates }));
+    return c.json(createResponse({ success: true, data: templates }));
   } catch (error: any) {
     logger.error(`Failed to load templates: ${error.message}`);
-    next(
-      new APIError(
-        constants.ErrorCode.INTERNAL_SERVER_ERROR,
-        undefined,
-        error.message
-      )
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      undefined,
+      error.message
     );
   }
 });
 
-export default router;
+export default app;

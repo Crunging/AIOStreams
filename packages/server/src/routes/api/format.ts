@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   createLogger,
@@ -12,12 +12,12 @@ import {
 } from '@aiostreams/core';
 import { formatApiRateLimiter } from '../../middlewares/ratelimit.js';
 import z from 'zod';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
-
-router.use(formatApiRateLimiter);
-
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
+
+app.use('*', formatApiRateLimiter);
 
 // Schema for the formatter context that can be sent from the client
 const FormatterContextSchema = z.object({
@@ -33,6 +33,7 @@ const FormatterContextSchema = z.object({
   yearEnd: z.number().optional(),
   genres: z.array(z.string()).optional(),
   runtime: z.number().optional(),
+  episodeRuntime: z.number().optional(),
   absoluteEpisode: z.number().optional(),
   relativeAbsoluteEpisode: z.number().optional(),
   originalLanguage: z.string().optional(),
@@ -45,7 +46,7 @@ const FormatterContextSchema = z.object({
   anilistId: z.number().optional(),
   malId: z.number().optional(),
   hasSeaDex: z.boolean().optional(),
-  maxRseScore: z.number().optional(),
+  maxSeScore: z.number().optional(),
   maxRegexScore: z.number().optional(),
 });
 
@@ -84,14 +85,34 @@ function createDummyFormatterContext(
   };
 }
 
-router.post('/', async (req: Request, res: Response) => {
-  const { stream, context } = req.body;
+app.post('/', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch (error: any) {
+    throw new APIError(
+      constants.ErrorCode.BAD_REQUEST,
+      400,
+      'Invalid JSON body'
+    );
+  }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new APIError(
+      constants.ErrorCode.BAD_REQUEST,
+      400,
+      'Invalid JSON body'
+    );
+  }
+  const { stream, context: clientContext } = body as {
+    stream: unknown;
+    context?: unknown;
+  };
 
   const {
     success: userDataSuccess,
     error: userDataError,
     data: userDataData,
-  } = UserDataSchema.safeParse(context.userData);
+  } = UserDataSchema.safeParse((clientContext as any)?.userData);
   if (!userDataSuccess) {
     logger.error('Invalid user data', { error: userDataError });
     throw new APIError(
@@ -103,12 +124,12 @@ router.post('/', async (req: Request, res: Response) => {
 
   // Parse optional formatter context
   let contextOverrides: Partial<FormatterContext> = {};
-  if (context) {
+  if (clientContext) {
     const {
       success: contextSuccess,
       error: contextError,
       data: contextData,
-    } = FormatterContextSchema.safeParse(context);
+    } = FormatterContextSchema.safeParse(clientContext);
     if (!contextSuccess) {
       logger.error('Invalid formatter context', { error: contextError });
       throw new APIError(
@@ -117,7 +138,7 @@ router.post('/', async (req: Request, res: Response) => {
         formatZodError(contextError)
       );
     }
-    contextOverrides = contextData;
+    contextOverrides = contextData as Partial<FormatterContext>;
   }
 
   const formatterContext = createDummyFormatterContext(
@@ -140,9 +161,7 @@ router.post('/', async (req: Request, res: Response) => {
     );
   }
   const formattedStream = await formatter.format(streamData);
-  res
-    .status(200)
-    .json(createResponse({ success: true, data: formattedStream }));
+  return c.json(createResponse({ success: true, data: formattedStream }));
 });
 
-export default router;
+export default app;

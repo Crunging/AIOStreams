@@ -1,69 +1,73 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import {
-  AIOStreams,
-  MetaResponse,
-  createLogger,
-  StremioTransformer,
-} from '@aiostreams/core';
-
-import { stremioMetaRateLimiter } from '../../middlewares/ratelimit.js';
+import { Context } from 'hono';
+import { AIOStreams, createLogger, StremioTransformer } from '@aiostreams/core';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-router.use(stremioMetaRateLimiter);
+export const meta = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  if (!userData) {
+    return c.json({
+      meta: StremioTransformer.createErrorMeta({
+        errorDescription: 'Please configure the addon first',
+      }),
+    });
+  }
+  const transformer = new StremioTransformer(userData);
+  try {
+    const type = c.req.param('type');
+    const idRaw = c.req.param('id.json') || c.req.param('id') || '';
+    const id = idRaw.replace(/\.json$/, '');
+    logger.debug('Meta request received', {
+      type,
+      id,
+    });
 
-router.get(
-  '/:type/:id.json',
-  async (req: Request, res: Response<MetaResponse>, next: NextFunction) => {
-    if (!req.userData) {
-      res.status(200).json({
-        meta: StremioTransformer.createErrorMeta({
-          errorDescription: 'Please configure the addon first',
-        }),
-      });
-      return;
-    }
-    const transformer = new StremioTransformer(req.userData);
-    try {
-      const { type, id } = req.params;
-      logger.debug('Meta request received', {
-        type,
-        id,
-        userData: req.userData,
-      });
-
-      if (id.startsWith('aiostreamserror.')) {
-        res.status(200).json({
+    if (id.startsWith('aiostreamserror.')) {
+      try {
+        return c.json({
           meta: StremioTransformer.createErrorMeta(
             JSON.parse(decodeURIComponent(id.split('.').slice(1).join('.')))
           ),
         });
-        return;
+      } catch {
+        return c.json({
+          meta: StremioTransformer.createErrorMeta({
+            errorDescription: 'Invalid error payload',
+          }),
+        });
       }
-
-      const aiostreams = new AIOStreams(req.userData);
-      await aiostreams.initialise();
-
-      const meta = await aiostreams.getMeta(type, id);
-      const streamContext = aiostreams.getStreamContext();
-
-      const transformed = await transformer.transformMeta(
-        meta,
-        streamContext?.toFormatterContext(),
-        {
-          provideStreamData: true,
-        }
-      );
-      if (!transformed) {
-        next();
-      } else {
-        res.status(200).json(transformed);
-      }
-    } catch (error) {
-      next(error);
     }
-  }
-);
 
-export default router;
+    const aiostreams = new AIOStreams(userData);
+    await aiostreams.initialise();
+
+    const fetchedMeta = await aiostreams.getMeta(type, id);
+    const streamContext = aiostreams.getStreamContext();
+
+    const transformed = await transformer.transformMeta(
+      fetchedMeta,
+      streamContext?.toFormatterContext(),
+      {
+        provideStreamData: true,
+      }
+    );
+    if (!transformed) {
+      return c.notFound();
+    }
+    return c.json(transformed);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errors = [{ description: errorMessage }];
+    if (transformer.showError('meta', errors)) {
+      logger.error(`Error in meta route: ${errorMessage}`);
+      return c.json({
+        meta: StremioTransformer.createErrorMeta({
+          errorDescription: errorMessage,
+        }),
+      });
+    }
+    logger.error('Error in meta route:', error);
+    throw error;
+  }
+};

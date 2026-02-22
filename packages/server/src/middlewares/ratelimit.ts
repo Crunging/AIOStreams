@@ -1,16 +1,37 @@
-import rateLimit, { MemoryStore, ipKeyGenerator } from 'express-rate-limit';
-import { Request, Response, NextFunction } from 'express';
-import { RedisStore } from 'rate-limit-redis';
 import {
   Env,
   createLogger,
   constants,
   APIError,
-  Cache,
-  REDIS_PREFIX,
+  StremioTransformer,
 } from '@aiostreams/core';
+import { rateLimiter } from 'hono-rate-limiter';
+import { RedisStore, RedisClient } from '@hono-rate-limiter/redis';
+import { createClient } from 'redis';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import { HonoEnv } from '../types.js';
+import { Context, Next } from 'hono';
 
 const logger = createLogger('server');
+
+// Create a single Redis client for rate limiting if configured
+let redisClient: ReturnType<typeof createClient> | undefined;
+
+if (
+  Env.REDIS_URI &&
+  Env.RATE_LIMIT_STORE === 'redis' &&
+  !Env.DISABLE_RATE_LIMITS
+) {
+  redisClient = createClient({
+    url: Env.REDIS_URI,
+  });
+  redisClient.on('error', (err) => {
+    logger.error('Redis client error:', err);
+  });
+  redisClient.connect().catch((err) => {
+    logger.error('Failed to connect to Redis for rate limiting:', err);
+  });
+}
 
 const createRateLimiter = (
   windowMs: number,
@@ -18,129 +39,147 @@ const createRateLimiter = (
   prefix: string = ''
 ) => {
   if (Env.DISABLE_RATE_LIMITS) {
-    return (req: Request, res: Response, next: NextFunction) => next();
+    return async (c: Context<HonoEnv>, next: Next) => await next();
   }
-  const redisClient = Env.REDIS_URI ? Cache.getRedisClient() : undefined;
-  const store =
-    redisClient && Env.RATE_LIMIT_STORE === 'redis'
-      ? new RedisStore({
-          prefix: `${REDIS_PREFIX}rate-limit:`,
-          sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-        })
-      : new MemoryStore();
-  return rateLimit({
+
+  // Redis client adapter to bridge node-redis v5 with hono-rate-limiter
+  const redisClientAdapter: RedisClient | undefined = redisClient
+    ? {
+        scriptLoad: (lua: string) => redisClient!.scriptLoad(lua),
+        evalsha: <TArgs extends unknown[], TData = unknown>(
+          sha: string,
+          keys: string[],
+          args: TArgs
+        ) =>
+          redisClient!.evalSha(sha, {
+            keys,
+            arguments: args as unknown as string[],
+          }) as Promise<TData>,
+        decr: (key: string) => redisClient!.decr(key),
+        del: (key: string) => redisClient!.del(key),
+      }
+    : undefined;
+
+  const getRateLimitIp = (c: Context<HonoEnv>) => {
+    const info = getConnInfo(c);
+    return c.get('userIp') ?? info.remote?.address ?? 'unknown';
+  };
+
+  return rateLimiter({
     windowMs,
-    max: maxRequests,
-    standardHeaders: true,
-    legacyHeaders: false,
-    store,
-    keyGenerator: (req: Request) => {
-      const ip = req.requestIp || req.userIp || req.ip;
-      const ipKey = ip ? ipKeyGenerator(ip) : '';
-      return prefix + ':' + ipKey;
+    limit: maxRequests,
+    standardHeaders: 'draft-6',
+    // Keep key/log IP selection consistent
+    keyGenerator: (c: Context<HonoEnv>) => {
+      const ip = getRateLimitIp(c);
+      return `${prefix}:${ip}`;
     },
-    handler: (
-      req: Request,
-      res: Response,
-      next: NextFunction,
-      options: any
-    ) => {
-      const timeRemaining = req.rateLimit?.resetTime
-        ? req.rateLimit.resetTime.getTime() - new Date().getTime()
-        : 0;
-      logger.warn(
-        `${prefix} rate limit exceeded for IP: ${req.requestIp || req.userIp || req.ip} - ${
-          options.message
-        } - Time remaining: ${timeRemaining}ms`
-      );
+    store: redisClientAdapter
+      ? new RedisStore<HonoEnv>({
+          client: redisClientAdapter,
+          prefix: `aiostreams:ratelimit:${prefix}:`,
+        })
+      : undefined, // undefined falls back to MemoryStore
+    handler: (c: Context<HonoEnv>) => {
+      const ip = getRateLimitIp(c);
+      logger.warn(`${prefix} rate limit exceeded for IP: ${ip}`);
+
+      const stremioResourceRequestRegex =
+        /^\/stremio\/[0-9a-fA-F-]{36}\/[A-Za-z0-9_=-]+\/(stream|meta|addon_catalog|subtitles|catalog)/;
+      const resource = stremioResourceRequestRegex.exec(c.req.path);
+
+      type StremioResource =
+        | 'stream'
+        | 'meta'
+        | 'addon_catalog'
+        | 'subtitles'
+        | 'catalog';
+
+      if (resource) {
+        const dynamicError = StremioTransformer.createDynamicError(
+          resource[1] as StremioResource,
+          {
+            errorDescription: 'Rate Limit Exceeded',
+          }
+        );
+        if (dynamicError) {
+          return c.json(dynamicError);
+        }
+      }
+
       throw new APIError(constants.ErrorCode.RATE_LIMIT_EXCEEDED);
     },
   });
 };
 
-const userApiRateLimiter = createRateLimiter(
+export const userApiRateLimiter = createRateLimiter(
   Env.USER_API_RATE_LIMIT_WINDOW * 1000,
   Env.USER_API_RATE_LIMIT_MAX_REQUESTS,
   'user-api'
 );
 
-const streamApiRateLimiter = createRateLimiter(
+export const streamApiRateLimiter = createRateLimiter(
   Env.STREAM_API_RATE_LIMIT_WINDOW * 1000,
   Env.STREAM_API_RATE_LIMIT_MAX_REQUESTS,
   'stream-api'
 );
 
-const formatApiRateLimiter = createRateLimiter(
+export const formatApiRateLimiter = createRateLimiter(
   Env.FORMAT_API_RATE_LIMIT_WINDOW * 1000,
   Env.FORMAT_API_RATE_LIMIT_MAX_REQUESTS,
   'format-api'
 );
 
-const catalogApiRateLimiter = createRateLimiter(
+export const catalogApiRateLimiter = createRateLimiter(
   Env.CATALOG_API_RATE_LIMIT_WINDOW * 1000,
   Env.CATALOG_API_RATE_LIMIT_MAX_REQUESTS,
   'catalog-api'
 );
 
-const animeApiRateLimiter = createRateLimiter(
+export const animeApiRateLimiter = createRateLimiter(
   Env.ANIME_API_RATE_LIMIT_WINDOW * 1000,
   Env.ANIME_API_RATE_LIMIT_MAX_REQUESTS,
   'anime-api'
 );
 
-const stremioStreamRateLimiter = createRateLimiter(
+export const stremioStreamRateLimiter = createRateLimiter(
   Env.STREMIO_STREAM_RATE_LIMIT_WINDOW * 1000,
   Env.STREMIO_STREAM_RATE_LIMIT_MAX_REQUESTS,
   'stremio-stream'
 );
 
-const stremioCatalogRateLimiter = createRateLimiter(
+export const stremioCatalogRateLimiter = createRateLimiter(
   Env.STREMIO_CATALOG_RATE_LIMIT_WINDOW * 1000,
   Env.STREMIO_CATALOG_RATE_LIMIT_MAX_REQUESTS,
   'stremio-catalog'
 );
 
-const stremioManifestRateLimiter = createRateLimiter(
+export const stremioManifestRateLimiter = createRateLimiter(
   Env.STREMIO_MANIFEST_RATE_LIMIT_WINDOW * 1000,
   Env.STREMIO_MANIFEST_RATE_LIMIT_MAX_REQUESTS,
   'stremio-manifest'
 );
 
-const stremioSubtitleRateLimiter = createRateLimiter(
+export const stremioSubtitleRateLimiter = createRateLimiter(
   Env.STREMIO_SUBTITLE_RATE_LIMIT_WINDOW * 1000,
   Env.STREMIO_SUBTITLE_RATE_LIMIT_MAX_REQUESTS,
   'stremio-subtitle'
 );
 
-const stremioMetaRateLimiter = createRateLimiter(
+export const stremioMetaRateLimiter = createRateLimiter(
   Env.STREMIO_META_RATE_LIMIT_WINDOW * 1000,
   Env.STREMIO_META_RATE_LIMIT_MAX_REQUESTS,
   'stremio-meta'
 );
 
-const staticRateLimiter = createRateLimiter(
+export const staticRateLimiter = createRateLimiter(
   Env.STATIC_RATE_LIMIT_WINDOW * 1000,
   Env.STATIC_RATE_LIMIT_MAX_REQUESTS,
   'static'
 );
 
-const easynewsNzbRateLimiter = createRateLimiter(
+export const easynewsNzbRateLimiter = createRateLimiter(
   Env.EASYNEWS_NZB_RATE_LIMIT_WINDOW * 1000,
   Env.EASYNEWS_NZB_RATE_LIMIT_MAX_REQUESTS,
   'easynews-nzb'
 );
-
-export {
-  userApiRateLimiter,
-  streamApiRateLimiter,
-  formatApiRateLimiter,
-  catalogApiRateLimiter,
-  animeApiRateLimiter,
-  stremioStreamRateLimiter,
-  stremioCatalogRateLimiter,
-  stremioManifestRateLimiter,
-  stremioSubtitleRateLimiter,
-  stremioMetaRateLimiter,
-  staticRateLimiter,
-  easynewsNzbRateLimiter,
-};

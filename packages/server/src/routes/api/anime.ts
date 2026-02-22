@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Hono } from 'hono';
 import { createResponse } from '../../utils/responses.js';
 import {
   APIError,
@@ -11,67 +11,49 @@ import {
 } from '@aiostreams/core';
 import { z, ZodError } from 'zod';
 import { animeApiRateLimiter } from '../../middlewares/ratelimit.js';
+import { HonoEnv } from '../../types.js';
 
-const router: Router = Router();
+const app = new Hono<HonoEnv>();
 const logger = createLogger('server');
 
-router.use(animeApiRateLimiter);
+app.use('*', animeApiRateLimiter);
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  let idType: IdType;
-  let idValue: string | number;
-  let season: number | undefined;
-  let episode: number | undefined;
+app.get('/', async (c) => {
   try {
-    const {
-      idType: idTypeParam,
-      idValue: idValueParam,
-      season: seasonParam,
-      episode: episodeParam,
-    } = z
+    const query = c.req.query();
+    const { idType, idValue, season, episode } = z
       .object({
         idType: z.enum(ID_TYPES),
-        idValue: z.union([z.string(), z.number()]),
+        idValue: z.union([z.string(), z.coerce.number()]),
         season: z.coerce.number().optional(),
         episode: z.coerce.number().optional(),
       })
-      .parse(req.query);
-    idType = idTypeParam;
-    idValue = idValueParam;
-    season = seasonParam;
-    episode = episodeParam;
-  } catch (error: any) {
-    if (error instanceof ZodError) {
-      next(
-        new APIError(
-          constants.ErrorCode.BAD_REQUEST,
-          400,
-          formatZodError(error)
-        )
-      );
-      return;
-    }
-    next(new APIError(constants.ErrorCode.BAD_REQUEST, error.message));
-    return;
-  }
-  try {
+      .parse(query);
+
     const mappingEntry = AnimeDatabase.getInstance().getEntryById(
       idType,
       idValue,
       season,
       episode
     );
-    res
-      .status(200)
-      .json(
-        createResponse({ success: true, detail: 'OK', data: mappingEntry })
-      );
+    return c.json(
+      createResponse({ success: true, detail: 'OK', data: mappingEntry })
+    );
   } catch (error: any) {
+    if (error instanceof ZodError) {
+      throw new APIError(
+        constants.ErrorCode.BAD_REQUEST,
+        400,
+        formatZodError(error)
+      );
+    }
     logger.error(`Mapping check failed: ${error.message}`);
-    next(
-      new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR, error.message)
+    throw new APIError(
+      constants.ErrorCode.INTERNAL_SERVER_ERROR,
+      undefined,
+      error.message
     );
   }
 });
 
-export default router;
+export default app;

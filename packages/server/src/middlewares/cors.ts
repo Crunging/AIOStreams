@@ -1,16 +1,20 @@
-import { Request, Response, NextFunction } from 'express';
-import { createLogger } from '@aiostreams/core';
+import { MiddlewareHandler } from 'hono';
+import { HonoEnv } from '../types.js';
 
-const logger = createLogger('server');
+export const corsMiddleware: MiddlewareHandler<HonoEnv> = async (c, next) => {
+  c.res.headers.set('Access-Control-Allow-Origin', '*');
+  c.res.headers.set(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, HEAD, OPTIONS'
+  );
+  c.res.headers.set(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
 
-export const corsMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  next();
+  if (c.req.method === 'OPTIONS') {
+    return c.body(null, 204);
+  }
+
+  await next();
 };

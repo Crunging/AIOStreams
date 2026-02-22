@@ -1,7 +1,3 @@
-import { createLogger } from '@aiostreams/core';
-import { Request } from 'express';
-const logger = createLogger('server');
-
 type ApiResponseOptions = {
   success: boolean;
   detail?: string;

@@ -1,67 +1,61 @@
-import { Router, Request, Response } from 'express';
+import { Context } from 'hono';
 import {
   AddonCatalogResponse,
   AIOStreams,
   createLogger,
   StremioTransformer,
 } from '@aiostreams/core';
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-const router: Router = Router();
 
-router.get(
-  '/:type/:id.json',
-  async (req: Request, res: Response<AddonCatalogResponse>, next) => {
-    if (!req.userData) {
-      res.status(200).json({
-        addons: [
-          StremioTransformer.createErrorAddonCatalog({
-            errorDescription: 'Please configure the addon first',
-          }),
-        ],
-      });
-      return;
-    }
-    const transformer = new StremioTransformer(req.userData);
-
-    try {
-      const { type, id } = req.params;
-      logger.debug('Addon catalog request received', {
-        type,
-        id,
-      });
-      res
-        .status(200)
-        .json(
-          transformer.transformAddonCatalog(
-            await (
-              await new AIOStreams(req.userData).initialise()
-            ).getAddonCatalog(type, id)
-          )
-        );
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const errors = [
-        {
-          description: errorMsg,
-        },
-      ];
-      if (transformer.showError('addon_catalog', errors)) {
-        logger.error(
-          `Unexpected error during addon catalog retrieval: ${errorMsg}`
-        );
-        res.status(200).json(
-          transformer.transformAddonCatalog({
-            success: false,
-            data: [],
-            errors,
-          })
-        );
-      } else {
-        next(error);
-      }
-    }
+export const addonCatalog = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
+  if (!userData) {
+    return c.json({
+      addons: [
+        StremioTransformer.createErrorAddonCatalog({
+          errorDescription: 'Please configure the addon first',
+        }),
+      ],
+    });
   }
-);
+  const transformer = new StremioTransformer(userData);
 
-export default router;
+  try {
+    const type = c.req.param('type');
+    const idRaw = c.req.param('id.json') ?? c.req.param('id');
+    const id = (idRaw ?? '').replace(/\.json$/, '');
+    logger.debug('Addon catalog request received', {
+      type,
+      id,
+    });
+    const aiostreams = new AIOStreams(userData);
+    await aiostreams.initialise();
+    const addonCatalog = await aiostreams.getAddonCatalog(type, id);
+    return c.json(transformer.transformAddonCatalog(addonCatalog));
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errors = [
+      {
+        title: 'Addon Catalog Error',
+        description: errorMsg,
+      },
+    ];
+    if (transformer.showError('addon_catalog', errors)) {
+      logger.error(
+        `Unexpected error during addon catalog retrieval: ${errorMsg}`,
+        error
+      );
+      return c.json(
+        transformer.transformAddonCatalog({
+          success: false,
+          data: [],
+          errors,
+        })
+      );
+    }
+    logger.debug(`Re-throwing suppressed addon_catalog error: ${errorMsg}`);
+    throw error;
+  }
+};

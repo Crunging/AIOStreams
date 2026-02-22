@@ -1,6 +1,5 @@
 import app from './app.js';
-import fs from 'fs/promises';
-import path from 'path';
+import { serve } from '@hono/node-server';
 
 import {
   Env,
@@ -109,16 +108,16 @@ async function start() {
       startAutoPrune();
     }
     initialiseAuth();
-    const server = app.listen(Env.PORT, (error) => {
-      if (error) {
-        logger.error('Failed to start server:', error);
-        process.exit(1);
+    const server = serve(
+      {
+        fetch: app.fetch,
+        port: Number(Env.PORT),
+      },
+      (info) => {
+        logger.info(`Server running on port ${info.port}`);
+        logStartupFooter();
       }
-      logger.info(
-        `Server running on port ${Env.PORT}: ${JSON.stringify(server.address())}`
-      );
-      logStartupFooter();
-    });
+    );
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

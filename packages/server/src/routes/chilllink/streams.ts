@@ -1,19 +1,15 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Context } from 'hono';
 import {
   AIOStreams,
   createLogger,
   constants,
   ChillLinkTransformer,
 } from '@aiostreams/core';
-import { stremioStreamRateLimiter } from '../../middlewares/ratelimit.js';
 import { createResponse } from '../../utils/responses.js';
 import z from 'zod';
-
-const router: Router = Router();
+import { HonoEnv } from '../../types.js';
 
 const logger = createLogger('server');
-
-router.use(stremioStreamRateLimiter);
 
 const ChillLinkQuerySchema = z.object({
   type: z.string(),
@@ -23,33 +19,35 @@ const ChillLinkQuerySchema = z.object({
   episode: z.coerce.number().optional(),
 });
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+export const streams = async (c: Context<HonoEnv>) => {
+  const userData = c.get('userData');
   // Check if we have user data (set by middleware in authenticated routes)
-  if (!req.userData) {
+  if (!userData) {
     // Return a response indicating configuration is needed
-    res.status(400).json(
+    return c.json(
       createResponse({
         success: false,
         error: {
           code: constants.ErrorCode.BAD_REQUEST,
           message: 'Please configure the addon first',
         },
-      })
+      }),
+      400
     );
-    return;
   }
-  const transformer = new ChillLinkTransformer(req.userData);
+  const transformer = new ChillLinkTransformer(userData);
 
   try {
+    const query = c.req.query();
     const { tmdbID, imdbID, type, season, episode } =
-      ChillLinkQuerySchema.parse(req.query);
+      ChillLinkQuerySchema.parse(query);
 
     const stremioId =
       (imdbID || `tmdb:${tmdbID}`) +
       (season ? `:${season}` : '') +
       (episode ? `:${episode}` : '');
 
-    const aiostreams = await new AIOStreams(req.userData).initialise();
+    const aiostreams = await new AIOStreams(userData).initialise();
 
     const response = await aiostreams.getStreams(stremioId, type);
     const streamContext = aiostreams.getStreamContext();
@@ -58,16 +56,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new Error('Stream context not available');
     }
 
-    res
-      .status(200)
-      .json(
-        await transformer.transformStreams(
-          response,
-          streamContext.toFormatterContext()
-        )
-      );
+    return c.json(
+      await transformer.transformStreams(
+        response,
+        streamContext.toFormatterContext()
+      )
+    );
   } catch (error) {
-    let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let errorMessage = error instanceof Error ? error.message : String(error);
     let errors = [
       {
         description: errorMessage,
@@ -78,17 +74,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         `Unexpected error during stream retrieval: ${errorMessage}`,
         error
       );
-      res.status(200).json({
+      return c.json({
         sources: [
           ChillLinkTransformer.createErrorStream({
             errorDescription: errorMessage,
           }),
         ],
       });
-      return;
     }
-    next(error);
+    throw error;
   }
-});
-
-export default router;
+};

@@ -1,11 +1,19 @@
-import { Router, Request, Response } from 'express';
+import { Context } from 'hono';
 import path from 'path';
-const router: Router = Router();
-import { staticRateLimiter } from '../../middlewares/ratelimit.js';
+import { readFile } from 'fs/promises';
 import { frontendRoot } from '../../app.js';
 
-export default router;
+let indexHtmlPromise: Promise<string> | undefined;
 
-router.get('/', staticRateLimiter, (req: Request, res: Response) => {
-  res.sendFile(path.join(frontendRoot, 'index.html'));
-});
+export const configure = async (c: Context) => {
+  if (!indexHtmlPromise) {
+    indexHtmlPromise = readFile(
+      path.join(frontendRoot, 'index.html'),
+      'utf-8'
+    ).catch((err) => {
+      indexHtmlPromise = undefined; // Allow retry on next request
+      throw err;
+    });
+  }
+  return c.html(await indexHtmlPromise);
+};

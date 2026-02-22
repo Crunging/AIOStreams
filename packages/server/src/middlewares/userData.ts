@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { MiddlewareHandler } from 'hono';
 import {
   createLogger,
   APIError,
@@ -12,6 +12,7 @@ import {
   RegexAccess,
   SelAccess,
 } from '@aiostreams/core';
+import { HonoEnv } from '../types.js';
 
 const logger = createLogger('server');
 
@@ -24,28 +25,31 @@ const VALID_RESOURCES = [
   'streams',
 ];
 
-export const userDataMiddleware = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
+export const userDataMiddleware: MiddlewareHandler<HonoEnv> = async (
+  c,
+  next
 ) => {
-  const { uuid: uuidOrAlias, encryptedPassword } = req.params;
+  const uuidOrAlias = c.req.param('uuid');
+  const encryptedPassword = c.req.param('encryptedPassword');
 
   // Both uuid and encryptedPassword should be present since we mounted the router on this path
   if (!uuidOrAlias || !encryptedPassword) {
-    next(new APIError(constants.ErrorCode.USER_INVALID_DETAILS));
-    return;
+    throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
   }
+
   // First check - validate path has two components followed by valid resource
-  const resourceRegex = new RegExp(`/(${VALID_RESOURCES.join('|')})`);
+  const path = c.req.path;
+  // Resource segment is at index 4 for both:
+  // /stremio/:uuid/:encryptedPassword/:resource
+  // /chilllink/:uuid/:encryptedPassword/:resource
+  const resource = path.split('/')[4];
 
-  const resourceMatch = req.path.match(resourceRegex);
-  if (!resourceMatch) {
-    next();
+  if (!resource || !VALID_RESOURCES.includes(resource)) {
+    await next();
     return;
   }
 
-  // Second check - validate UUID format (simpler regex that just checks UUID format)
+  // Second check - validate UUID format
   let uuid: string | undefined;
   const uuidRegex =
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -54,265 +58,242 @@ export const userDataMiddleware = async (
     if (alias) {
       uuid = alias.uuid;
     } else {
-      next(new APIError(constants.ErrorCode.USER_INVALID_DETAILS));
-      return;
+      throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
     }
   } else {
     uuid = uuidOrAlias;
   }
 
-  const resource = resourceMatch[1];
+  // decrypt the encrypted password
+  const { success: successfulDecryption, data: decryptedPassword } =
+    decryptString(encryptedPassword);
+  if (!successfulDecryption || !decryptedPassword) {
+    if (constants.RESOURCES.includes(resource as Resource)) {
+      return c.json(
+        StremioTransformer.createDynamicError(resource as Resource, {
+          errorDescription: 'Invalid password',
+        })
+      );
+    }
+    throw new APIError(constants.ErrorCode.ENCRYPTION_ERROR);
+  }
 
+  // Get and validate user data (this also implicitly checks if the user exists)
+  let userData: any;
   try {
-    // Check if user exists
-    const userExists = await UserRepository.checkUserExists(uuid);
-    if (!userExists) {
-      if (constants.RESOURCES.includes(resource as Resource)) {
-        res.status(200).json(
-          StremioTransformer.createDynamicError(resource as Resource, {
-            errorDescription: 'User not found',
-          })
-        );
-        return;
-      }
-      next(new APIError(constants.ErrorCode.USER_INVALID_DETAILS));
-      return;
+    userData = await UserRepository.getUser(uuid, decryptedPassword);
+  } catch (error: any) {
+    if (constants.RESOURCES.includes(resource as Resource)) {
+      return c.json(
+        StremioTransformer.createDynamicError(resource as Resource, {
+          errorDescription: 'Invalid user or password',
+        })
+      );
     }
+    throw error;
+  }
 
-    let password = undefined;
-
-    // decrypt the encrypted password
-    const { success: successfulDecryption, data: decryptedPassword } =
-      decryptString(encryptedPassword!);
-    if (!successfulDecryption) {
-      if (constants.RESOURCES.includes(resource as Resource)) {
-        res.status(200).json(
-          StremioTransformer.createDynamicError(resource as Resource, {
-            errorDescription: 'Invalid password',
-          })
-        );
-        return;
-      }
-      next(new APIError(constants.ErrorCode.ENCRYPTION_ERROR));
-      return;
+  if (!userData) {
+    if (constants.RESOURCES.includes(resource as Resource)) {
+      return c.json(
+        StremioTransformer.createDynamicError(resource as Resource, {
+          errorDescription: 'Invalid user or password',
+        })
+      );
     }
+    throw new APIError(constants.ErrorCode.USER_INVALID_DETAILS);
+  }
 
-    // Get and validate user data
-    let userData = await UserRepository.getUser(uuid, decryptedPassword);
+  userData.encryptedPassword = encryptedPassword;
+  userData.uuid = uuid;
+  userData.ip = c.get('userIp');
 
-    if (!userData) {
-      if (constants.RESOURCES.includes(resource as Resource)) {
-        res.status(200).json(
-          StremioTransformer.createDynamicError(resource as Resource, {
-            errorDescription: 'Invalid password',
-          })
-        );
-        return;
-      }
-      next(new APIError(constants.ErrorCode.USER_INVALID_DETAILS));
-      return;
-    }
-
-    userData.encryptedPassword = encryptedPassword;
-    userData.uuid = uuid;
-    userData.ip = req.userIp;
-
-    if (resource !== 'configure') {
-      // Sync regex patterns from URLs
-      try {
-        userData.preferredRegexPatterns = await RegexAccess.syncRegexPatterns(
+  if (resource !== 'configure') {
+    // Parallelize sync calls for better performance
+    // List of sync operations to perform
+    const syncConfig = [
+      // Regex Syncs
+      {
+        name: 'preferredRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
           userData.syncedPreferredRegexUrls,
           userData.preferredRegexPatterns || [],
           userData,
           (regex) => regex,
           (regex) => regex.pattern
-        );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync preferred regex patterns: ${error.message}`
-        );
-      }
-
-      try {
-        userData.excludedRegexPatterns = await RegexAccess.syncRegexPatterns(
+        ),
+      },
+      {
+        name: 'excludedRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
           userData.syncedExcludedRegexUrls,
           userData.excludedRegexPatterns || [],
           userData,
           (regex) => regex.pattern,
           (pattern) => pattern
-        );
-      } catch (error: any) {
-        logger.warn(`Failed to sync excluded regex patterns: ${error.message}`);
-      }
-
-      try {
-        userData.requiredRegexPatterns = await RegexAccess.syncRegexPatterns(
+        ),
+      },
+      {
+        name: 'requiredRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
           userData.syncedRequiredRegexUrls,
           userData.requiredRegexPatterns || [],
           userData,
           (regex) => regex.pattern,
           (pattern) => pattern
-        );
-      } catch (error: any) {
-        logger.warn(`Failed to sync required regex patterns: ${error.message}`);
-      }
-
-      try {
-        userData.includedRegexPatterns = await RegexAccess.syncRegexPatterns(
+        ),
+      },
+      {
+        name: 'includedRegexPatterns',
+        critical: false,
+        promise: RegexAccess.syncRegexPatterns(
           userData.syncedIncludedRegexUrls,
           userData.includedRegexPatterns || [],
           userData,
           (regex) => regex.pattern,
           (pattern) => pattern
-        );
-      } catch (error: any) {
-        logger.warn(`Failed to sync included regex patterns: ${error.message}`);
-      }
-
-      try {
-        userData.rankedRegexPatterns = await RegexAccess.syncRegexPatterns(
+        ),
+      },
+      {
+        name: 'rankedRegexPatterns',
+        critical: true,
+        promise: RegexAccess.syncRegexPatterns(
           userData.syncedRankedRegexUrls,
           userData.rankedRegexPatterns || [],
           userData,
-          (regex) => ({
+          (regex: any) => ({
             pattern: regex.pattern,
             name: regex.name,
             score: regex.score || 0,
           }),
-          (item) => item.pattern
-        );
-      } catch (error: any) {
-        logger.warn(`Failed to sync ranked regex patterns: ${error.message}`);
-      }
+          (item: any) => item.pattern
+        ),
+      },
+      // Stream Expression Syncs
+      {
+        name: 'preferredStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedPreferredStreamExpressionUrls,
+          userData.preferredStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
+      {
+        name: 'excludedStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedExcludedStreamExpressionUrls,
+          userData.excludedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
+      {
+        name: 'requiredStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedRequiredStreamExpressionUrls,
+          userData.requiredStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
+      {
+        name: 'includedStreamExpressions',
+        critical: false,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedIncludedStreamExpressionUrls,
+          userData.includedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
+      {
+        name: 'rankedStreamExpressions',
+        critical: true,
+        promise: SelAccess.syncStreamExpressions(
+          userData.syncedRankedStreamExpressionUrls,
+          userData.rankedStreamExpressions || [],
+          userData,
+          (item) => ({
+            expression: item.expression,
+            score: item.score || 0,
+            enabled: item.enabled ?? true,
+          }),
+          (item) => item.expression
+        ),
+      },
+    ];
 
-      // Sync stream expressions from URLs (don't throw on failure)
-      try {
-        userData.preferredStreamExpressions =
-          await SelAccess.syncStreamExpressions(
-            userData.syncedPreferredStreamExpressionUrls,
-            userData.preferredStreamExpressions || [],
-            userData,
-            (item) => ({
-              expression: item.expression,
-              enabled: item.enabled ?? true,
-            }),
-            (item) => item.expression
-          );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync preferred stream expressions: ${error.message}`
-        );
-      }
+    const syncResults = await Promise.allSettled(
+      syncConfig.map((s) => s.promise)
+    );
 
-      try {
-        userData.excludedStreamExpressions =
-          await SelAccess.syncStreamExpressions(
-            userData.syncedExcludedStreamExpressionUrls,
-            userData.excludedStreamExpressions || [],
-            userData,
-            (item) => ({
-              expression: item.expression,
-              enabled: item.enabled ?? true,
-            }),
-            (item) => item.expression
-          );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync excluded stream expressions: ${error.message}`
-        );
-      }
-
-      try {
-        userData.requiredStreamExpressions =
-          await SelAccess.syncStreamExpressions(
-            userData.syncedRequiredStreamExpressionUrls,
-            userData.requiredStreamExpressions || [],
-            userData,
-            (item) => ({
-              expression: item.expression,
-              enabled: item.enabled ?? true,
-            }),
-            (item) => item.expression
-          );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync required stream expressions: ${error.message}`
-        );
-      }
-
-      try {
-        userData.includedStreamExpressions =
-          await SelAccess.syncStreamExpressions(
-            userData.syncedIncludedStreamExpressionUrls,
-            userData.includedStreamExpressions || [],
-            userData,
-            (item) => ({
-              expression: item.expression,
-              enabled: item.enabled ?? true,
-            }),
-            (item) => item.expression
-          );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync included stream expressions: ${error.message}`
-        );
-      }
-
-      try {
-        userData.rankedStreamExpressions =
-          await SelAccess.syncStreamExpressions(
-            userData.syncedRankedStreamExpressionUrls,
-            userData.rankedStreamExpressions || [],
-            userData,
-            (item) => ({
-              expression: item.expression,
-              score: item.score || 0,
-              enabled: item.enabled ?? true,
-            }),
-            (item) => item.expression
-          );
-      } catch (error: any) {
-        logger.warn(
-          `Failed to sync ranked stream expressions: ${error.message}`
-        );
-      }
-
-      try {
-        userData = await validateConfig(userData, {
-          skipErrorsFromAddonsOrProxies: true,
-          decryptValues: true,
-        });
-      } catch (error: any) {
-        if (constants.RESOURCES.includes(resource as Resource)) {
-          res.status(200).json(
-            StremioTransformer.createDynamicError(resource as Resource, {
-              errorDescription: error.message,
-            })
-          );
-          return;
-        }
-        logger.error(`Invalid config for ${uuid}: ${error.message}`);
-        next(
-          new APIError(
+    syncResults.forEach((result, index) => {
+      const config = syncConfig[index];
+      if (result.status === 'fulfilled') {
+        (userData as any)[config.name] = result.value;
+      } else {
+        const error = result.reason;
+        const msg = `Failed to sync ${config.name}: ${error.message}`;
+        if (config.critical) {
+          logger.error(msg, error);
+          throw new APIError(
             constants.ErrorCode.USER_INVALID_CONFIG,
             undefined,
-            error.message
-          )
-        );
-        return;
+            msg
+          );
+        } else {
+          logger.warn(msg, error);
+        }
       }
-    }
+    });
 
-    // Attach validated data to request
-    req.userData = userData;
-    req.uuid = uuid;
-    next();
-  } catch (error: any) {
-    logger.error(error.message);
-    if (error instanceof APIError) {
-      next(error);
-    } else {
-      next(new APIError(constants.ErrorCode.INTERNAL_SERVER_ERROR));
+    try {
+      userData = await validateConfig(userData, {
+        skipErrorsFromAddonsOrProxies: true,
+        decryptValues: true,
+      });
+    } catch (error: any) {
+      if (constants.RESOURCES.includes(resource as Resource)) {
+        return c.json(
+          StremioTransformer.createDynamicError(resource as Resource, {
+            errorDescription: error.message,
+          })
+        );
+      }
+      logger.error(`Invalid config for ${uuid}: ${error.message}`);
+      throw new APIError(
+        constants.ErrorCode.USER_INVALID_CONFIG,
+        undefined,
+        error.message
+      );
     }
   }
+
+  // Attach validated data to context
+  c.set('userData', userData);
+  c.set('uuid', uuid);
+  await next();
 };
