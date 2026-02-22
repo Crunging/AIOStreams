@@ -10,7 +10,7 @@ import { RedisStore, RedisClient } from '@hono-rate-limiter/redis';
 import { createClient } from 'redis';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { HonoEnv } from '../types.js';
-import { Context } from 'hono';
+import { Context, Next } from 'hono';
 
 const logger = createLogger('server');
 
@@ -39,7 +39,7 @@ const createRateLimiter = (
   prefix: string = ''
 ) => {
   if (Env.DISABLE_RATE_LIMITS) {
-    return async (c: any, next: any) => await next();
+    return async (c: Context<HonoEnv>, next: Next) => await next();
   }
 
   // Redis client adapter to bridge node-redis v5 with hono-rate-limiter
@@ -90,9 +90,16 @@ const createRateLimiter = (
         new URL(c.req.url).pathname
       );
 
+      type StremioResource =
+        | 'stream'
+        | 'meta'
+        | 'addon_catalog'
+        | 'subtitles'
+        | 'catalog';
+
       if (resource) {
         const dynamicError = StremioTransformer.createDynamicError(
-          resource[1] as any,
+          resource[1] as StremioResource,
           {
             errorDescription: 'Rate Limit Exceeded',
           }
