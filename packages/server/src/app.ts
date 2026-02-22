@@ -89,11 +89,17 @@ export const frontendRoot = path.join(__dirname, '../../frontend/out');
 export const staticRoot = path.join(__dirname, './static');
 
 // Cache static files at startup
-const indexTxt = fs.readFileSync(path.join(frontendRoot, 'index.txt'), 'utf-8');
-const gdriveCallbackHtml = fs.readFileSync(
-  path.join(frontendRoot, 'oauth/callback/gdrive.html'),
-  'utf-8'
+const indexTxtPath = path.join(frontendRoot, 'index.txt');
+const indexTxt = fs.existsSync(indexTxtPath)
+  ? fs.readFileSync(indexTxtPath, 'utf-8')
+  : null;
+const gdriveCallbackPath = path.join(
+  frontendRoot,
+  'oauth/callback/gdrive.html'
 );
+const gdriveCallbackHtml = fs.existsSync(gdriveCallbackPath)
+  ? fs.readFileSync(gdriveCallbackPath, 'utf-8')
+  : null;
 const logoPng = fs.existsSync(path.join(frontendRoot, 'logo.png'))
   ? fs.readFileSync(path.join(frontendRoot, 'logo.png'))
   : null;
@@ -134,7 +140,7 @@ stremio.get('/manifest.json', stremioManifestRateLimiter, manifest);
 stremio.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
 stremio.get('/configure', staticRateLimiter, configure);
 stremio.get('/configure.txt', staticRateLimiter, (c) => {
-  return c.body(indexTxt);
+  return indexTxt ? c.body(indexTxt) : c.notFound();
 });
 stremio.get('/u/:alias', alias);
 
@@ -147,7 +153,7 @@ stremioAuth.get('/manifest.json', stremioManifestRateLimiter, manifest);
 stremioAuth.get('/stream/:type/:id', stremioStreamRateLimiter, stream);
 stremioAuth.get('/configure', staticRateLimiter, configure);
 stremioAuth.get('/configure.txt', staticRateLimiter, (c) => {
-  return c.body(indexTxt);
+  return indexTxt ? c.body(indexTxt) : c.notFound();
 });
 stremioAuth.get('/meta/:type/:id', stremioMetaRateLimiter, meta);
 stremioAuth.get('/catalog/:type/:id/:extra?', stremioCatalogRateLimiter, catalog);
@@ -214,7 +220,7 @@ app.use(
 );
 
 app.get('/oauth/callback/gdrive', (c) => {
-  return c.html(gdriveCallbackHtml);
+  return gdriveCallbackHtml ? c.html(gdriveCallbackHtml) : c.notFound();
 });
 
 app.get('/', (c) => {
