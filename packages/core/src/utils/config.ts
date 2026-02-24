@@ -447,7 +447,7 @@ export async function validateConfig(
     ...(config.preferredStreamExpressions?.map((e) => e.expression) ?? []),
     ...(config.includedStreamExpressions?.map((e) => e.expression) ?? []),
     ...(config.rankedStreamExpressions?.map((r) => r.expression) ?? []),
-  ].filter((expr) => !(expr.startsWith('<SYNCED: ') && expr.endsWith('>')));
+  ].filter((expr) => !isSyncedTag(expr));
 
   for (const expression of expressionsToValidate) {
     try {
@@ -864,7 +864,7 @@ async function validateRegexes(config: UserData, skipErrors: boolean = false) {
     ...requiredRegexes,
     ...preferredRegexes.map((regex) => regex.pattern),
     ...rankedRegexes.map((regex) => regex.pattern),
-  ].filter((pattern) => !(pattern.startsWith('<SYNCED: ') && pattern.endsWith('>')));
+  ].filter((pattern) => !isSyncedTag(pattern));
 
   if (!regexAllowed && regexes.length > 0) {
     const allowedPatterns = (await RegexAccess.allowedRegexPatterns()).patterns;
