@@ -15,7 +15,7 @@ const IMDBSuggestionSchema = z.object({
       l: z.string(), // title
       q: z.string(), // 'feature' |
       qid: z.string(), // e.g. 'movie',
-      rank: z.number(),
+      rank: z.number().optional(),
       s: z.string(), // comma separated cast
       y: z.number(), // year
       yr: z.string().optional(),
