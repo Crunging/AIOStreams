@@ -1,6 +1,7 @@
 import z from 'zod';
 import { UserData } from '../db/schemas.js';
 import { Env } from './env.js';
+import { isSyncedTag, parseSyncedUrl } from './synced-helpers.js';
 import { SyncManager, type SyncOverride, type FetchResult } from './sync.js';
 import { createLogger } from './logger.js';
 
@@ -296,16 +297,15 @@ export class RegexAccess {
       return syncedItems;
     };
 
-    const SYNCED_PREFIX = '<SYNCED: ';
-    const SYNCED_SUFFIX = '>';
+
     const result: U[] = [];
     const usedUrls = new Set<string>();
 
     for (const item of existing) {
       const key = uniqueKey(item);
 
-      if (key.startsWith(SYNCED_PREFIX) && key.endsWith(SYNCED_SUFFIX)) {
-        const url = key.slice(SYNCED_PREFIX.length, -SYNCED_SUFFIX.length).trim();
+      if (isSyncedTag(key)) {
+        const url = parseSyncedUrl(key);
 
         if (url) {
           usedUrls.add(url);

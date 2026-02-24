@@ -34,6 +34,7 @@ import {
   StreamSelector,
 } from '../parser/streamExpression.js';
 import { createLogger } from './logger.js';
+import { isSyncedTag, parseSyncedUrl } from './synced-helpers.js';
 import { TVDBMetadata } from '../metadata/tvdb.js';
 
 const logger = createLogger('core');
@@ -910,15 +911,12 @@ function validateSyncedRegexUrls(
 
   if (isUnrestricted) return;
 
-  const SYNCED_PREFIX = '<SYNCED: ';
-  const SYNCED_SUFFIX = '>';
-
   // Extract URLs from <SYNCED: url> patterns in expression arrays
   const extractSyncedUrls = (patterns: (string | { pattern?: string })[]): string[] =>
     patterns
       .map((p) => (typeof p === 'string' ? p : p.pattern || ''))
-      .filter((v) => v.startsWith(SYNCED_PREFIX) && v.endsWith(SYNCED_SUFFIX))
-      .map((v) => v.slice(SYNCED_PREFIX.length, -SYNCED_SUFFIX.length).trim());
+      .filter(isSyncedTag)
+      .map(parseSyncedUrl);
 
   const allowedUrls = RegexAccess.getAllowedUrls();
   const urlsToCheck = [
@@ -952,17 +950,14 @@ function validateSyncedSelUrls(config: UserData, skipErrors: boolean = false) {
 
   if (isUnrestricted) return;
 
-  const SYNCED_PREFIX = '<SYNCED: ';
-  const SYNCED_SUFFIX = '>';
-
   // Extract URLs from <SYNCED: url> patterns in expression arrays
   const extractSyncedUrls = (
     expressions: (string | { expression?: string })[]
   ): string[] =>
     expressions
       .map((e) => (typeof e === 'string' ? e : e.expression || ''))
-      .filter((v) => v.startsWith(SYNCED_PREFIX) && v.endsWith(SYNCED_SUFFIX))
-      .map((v) => v.slice(SYNCED_PREFIX.length, -SYNCED_SUFFIX.length).trim());
+      .filter(isSyncedTag)
+      .map(parseSyncedUrl);
 
   const allowedUrls = SelAccess.getAllowedUrls();
   const urlsToCheck = [

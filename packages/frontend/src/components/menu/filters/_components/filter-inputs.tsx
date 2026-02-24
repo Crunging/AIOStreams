@@ -13,11 +13,13 @@ import { ImportModal } from '../../../shared/import-modal';
 import {
   SyncedUrlInputs,
   type SyncConfig,
+} from './synced-patterns';
+import {
   isSyncedTag,
   parseSyncedUrl,
   makeSyncedTag,
   isManualSyncTagAttempt,
-} from './synced-patterns';
+} from '../../../../../../core/src/utils/synced-helpers';
 import {
   FaPlus,
   FaRegTrashAlt,
@@ -319,13 +321,19 @@ export function TextInputs({
     [onValuesChange]
   );
 
+  const getExpression = useCallback((v: string) => v, []);
+  const makePlaceholder = useCallback(
+    (url: string) => makeSyncedTag(url),
+    []
+  );
+
   const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
     syncConfig,
     values,
     valuesRef,
     onValuesChange,
-    (v) => v,
-    makeSyncedTag
+    getExpression,
+    makePlaceholder
   );
 
   return (
@@ -456,13 +464,19 @@ export function ToggleableTextInputs({
     title
   );
 
+  const getExpression = useCallback((v: { expression: string }) => v.expression, []);
+  const makePlaceholder = useCallback(
+    (url: string) => ({ expression: makeSyncedTag(url), enabled: true }),
+    []
+  );
+
   const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
     syncConfig,
     values,
     valuesRef,
     onValuesChange,
-    (v) => v.expression,
-    (url) => ({ expression: makeSyncedTag(url), enabled: true })
+    getExpression,
+    makePlaceholder
   );
 
   return (
@@ -612,13 +626,19 @@ export function TwoTextInputs({
     title
   );
 
+  const getExpression = useCallback((v: { name: string }) => v.name, []);
+  const makePlaceholder = useCallback(
+    (url: string) => ({ name: makeSyncedTag(url), value: makeSyncedTag(url) }),
+    []
+  );
+
   const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
     syncConfig,
     values,
     valuesRef,
     onValuesChange,
-    (v) => v.name,
-    (url) => ({ name: makeSyncedTag(url), value: makeSyncedTag(url) })
+    getExpression,
+    makePlaceholder
   );
 
   return (
@@ -761,13 +781,19 @@ export function RankedExpressionInputs({
     title
   );
 
+  const getExpression = useCallback((v: { expression: string }) => v.expression, []);
+  const makePlaceholder = useCallback(
+    (url: string) => ({ expression: makeSyncedTag(url), score: 0, enabled: true }),
+    []
+  );
+
   const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
     syncConfig,
     values,
     valuesRef,
     onValuesChange,
-    (v) => v.expression,
-    (url) => ({ expression: makeSyncedTag(url), score: 0, enabled: true })
+    getExpression,
+    makePlaceholder
   );
 
   return (
@@ -927,13 +953,19 @@ export function RankedRegexInputs({
     title
   );
 
+  const getExpression = useCallback((v: { pattern: string }) => v.pattern, []);
+  const makePlaceholder = useCallback(
+    (url: string) => ({ pattern: makeSyncedTag(url), name: url, score: 0 }),
+    []
+  );
+
   const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
     syncConfig,
     values,
     valuesRef,
     onValuesChange,
-    (v) => v.pattern,
-    (url) => ({ pattern: makeSyncedTag(url), name: url, score: 0 })
+    getExpression,
+    makePlaceholder
   );
 
   return (

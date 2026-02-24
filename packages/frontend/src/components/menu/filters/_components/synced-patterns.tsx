@@ -46,33 +46,6 @@ function extractAllNamesFromExpression(
   return names.length > 0 ? names : undefined;
 }
 
-// SYNCED tag constants and helpers
-export const SYNCED_PREFIX = '<SYNCED: ';
-export const SYNCED_SUFFIX = '>';
-
-export function makeSyncedTag(url: string): string {
-  return `${SYNCED_PREFIX}${url}${SYNCED_SUFFIX}`;
-}
-
-export function isSyncedTag(value: string | undefined): boolean {
-  if (!value) return false;
-  const trimmed = value.trim();
-  return trimmed.startsWith(SYNCED_PREFIX) && trimmed.endsWith(SYNCED_SUFFIX);
-}
-
-export function parseSyncedUrl(value: string): string {
-  return value.slice(SYNCED_PREFIX.length, -SYNCED_SUFFIX.length).trim();
-}
-
-/**
- * Checks if the input contains a manual synced tag attempt.
- * If found, shows a warning toast and returns true (blocked).
- */
-export function isManualSyncTagAttempt(value: string): boolean {
-  // Catch any attempt to manually type the prefix, even if not a complete tag
-  return value.includes(SYNCED_PREFIX);
-}
-
 /**
  * Compare two string arrays for equality.
  */
