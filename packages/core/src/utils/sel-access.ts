@@ -201,15 +201,16 @@ export class SelAccess {
           typeof item === 'object' && item !== null && (item as any).enabled === false;
 
         const url = key.slice(SYNCED_PREFIX.length, -SYNCED_SUFFIX.length).trim();
-
-        if (isPlaceholderDisabled) {
-          result.push(item); // Keep disabled placeholder without fetching
-        } else if (url) {
+        if (url) {
           usedUrls.add(url);
-          const syncedItems = await processExpressions(url);
-          result.push(...syncedItems);
+          if (isPlaceholderDisabled) {
+            result.push(item); // Keep disabled placeholder without fetching
+          } else {
+            const syncedItems = await processExpressions(url);
+            result.push(...syncedItems);
+          }
         } else {
-           result.push(item);
+          result.push(item);
         }
       } else {
         result.push(item);

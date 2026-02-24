@@ -1,5 +1,5 @@
 'use client';
-import { ReactNode, useCallback, useRef, useEffect } from 'react';
+import { ReactNode, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useDisclosure } from '@/hooks/disclosure';
 import { toast } from 'sonner';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -10,7 +10,14 @@ import { Tooltip } from '../../../ui/tooltip';
 import { Checkbox } from '../../../ui/checkbox';
 import { SettingsCard } from '../../../shared/settings-card';
 import { ImportModal } from '../../../shared/import-modal';
-import { SyncedUrlInputs, type SyncConfig } from './synced-patterns';
+import {
+  SyncedUrlInputs,
+  type SyncConfig,
+  isSyncedTag,
+  parseSyncedUrl,
+  makeSyncedTag,
+  isManualSyncTagAttempt,
+} from './synced-patterns';
 import {
   FaPlus,
   FaRegTrashAlt,
@@ -20,6 +27,63 @@ import {
   FaArrowDown,
 } from 'react-icons/fa';
 import { UserData } from '@aiostreams/core';
+
+function checkManualSyncTag(value: string): boolean {
+  if (isManualSyncTagAttempt(value)) {
+    toast.warning('Manual entry of synchronized tags is not allowed.');
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Custom hook to handle auto-migration of legacy `urls` array to the new inline tags
+ * and manage the `handleAdd` callback.
+ */
+function useSyncedUrlMigration<T>(
+  syncConfig: SyncConfig | undefined,
+  values: T[],
+  valuesRef: React.MutableRefObject<T[]>,
+  onValuesChange: (v: T[]) => void,
+  getExpression: (item: T) => string,
+  makePlaceholder: (url: string) => T
+) {
+  const hasAutoAppended = useRef(false);
+
+  useEffect(() => {
+    if (!syncConfig?.urls?.length || hasAutoAppended.current) return;
+    hasAutoAppended.current = true;
+
+    const current = valuesRef.current;
+    const toAdd = syncConfig.urls.filter(
+      (url: string) => !current.some((v) => getExpression(v) === makeSyncedTag(url))
+    );
+
+    if (toAdd.length) {
+      onValuesChange([...current, ...toAdd.map(makePlaceholder)]);
+    }
+    // Clear legacy array after migration
+    syncConfig.onUrlsChange([]);
+  }, [syncConfig, onValuesChange, getExpression, makePlaceholder, valuesRef]);
+
+  const handleUrlAdded = useCallback(
+    (url: string) => {
+      onValuesChange([...valuesRef.current, makePlaceholder(url)]);
+    },
+    [onValuesChange, makePlaceholder, valuesRef]
+  );
+
+  const existingUrls = useMemo(
+    () =>
+      values
+        .map(getExpression)
+        .filter(isSyncedTag)
+        .map(parseSyncedUrl),
+    [values, getExpression]
+  );
+
+  return { handleUrlAdded, existingUrls };
+}
 
 // Shared helpers
 
@@ -255,45 +319,20 @@ export function TextInputs({
     [onValuesChange]
   );
 
-  const hasAutoAppended = useRef(false);
-  useEffect(() => {
-    if (
-      syncConfig?.urls &&
-      syncConfig.urls.length > 0 &&
-      !hasAutoAppended.current
-    ) {
-      hasAutoAppended.current = true;
-      let newValues = [...valuesRef.current];
-      let changed = false;
-      for (const url of syncConfig.urls) {
-        if (!newValues.some((v) => v === `<SYNCED: ${url}>`)) {
-          newValues.push(`<SYNCED: ${url}>`);
-          changed = true;
-        }
-      }
-      if (changed) {
-        onValuesChange(newValues);
-      }
-      // Clear legacy array after migration
-      syncConfig.onUrlsChange([]);
-    }
-  }, [syncConfig?.urls, onValuesChange]);
-
-  const handleUrlAdded = useCallback(
-    (url: string) => {
-      onValuesChange([...valuesRef.current, `<SYNCED: ${url}>`]);
-    },
-    [onValuesChange]
+  const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
+    syncConfig,
+    values,
+    valuesRef,
+    onValuesChange,
+    (v) => v,
+    makeSyncedTag
   );
 
   return (
     <SettingsCard title={label} description={help} key={label}>
       {values.map((value, index) => {
-        const isSyncedPlaceholder =
-          value.startsWith('<SYNCED: ') && value.endsWith('>');
-        const syncedUrl = isSyncedPlaceholder
-          ? value.slice('<SYNCED: '.length, -1).trim()
-          : '';
+        const isSyncedPlaceholder = isSyncedTag(value);
+        const syncedUrl = isSyncedPlaceholder ? parseSyncedUrl(value) : '';
 
         return (
           <div key={index} className="flex gap-2">
@@ -310,7 +349,7 @@ export function TextInputs({
                   label={itemName}
                   placeholder={placeholder}
                   onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
+                    if (checkManualSyncTag(newValue)) return;
                     handleValueChange(newValue, index);
                   }}
                 />
@@ -342,7 +381,7 @@ export function TextInputs({
           renderType="simple"
           hideList
           onUrlAdded={handleUrlAdded}
-          existingUrls={values.filter((v) => v.startsWith('<SYNCED: ') && v.endsWith('>')).map((v) => v.slice('<SYNCED: '.length, -1).trim())}
+          existingUrls={existingUrls}
         />
       )}
     </SettingsCard>
@@ -417,44 +456,21 @@ export function ToggleableTextInputs({
     title
   );
 
-  const hasAutoAppended = useRef(false);
-  useEffect(() => {
-    if (
-      syncConfig?.urls &&
-      syncConfig.urls.length > 0 &&
-      !hasAutoAppended.current
-    ) {
-      hasAutoAppended.current = true;
-      let newValues = [...valuesRef.current];
-      let changed = false;
-      for (const url of syncConfig.urls) {
-        if (!newValues.some((v) => v.expression === `<SYNCED: ${url}>`)) {
-          newValues.push({ expression: `<SYNCED: ${url}>`, enabled: true });
-          changed = true;
-        }
-      }
-      if (changed) {
-        onValuesChange(newValues);
-      }
-      // Clear legacy array after migration
-      syncConfig.onUrlsChange([]);
-    }
-  }, [syncConfig?.urls, onValuesChange]);
-
-  const handleUrlAdded = useCallback(
-    (url: string) => {
-      onValuesChange([...valuesRef.current, { expression: `<SYNCED: ${url}>`, enabled: true }]);
-    },
-    [onValuesChange]
+  const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
+    syncConfig,
+    values,
+    valuesRef,
+    onValuesChange,
+    (v) => v.expression,
+    (url) => ({ expression: makeSyncedTag(url), enabled: true })
   );
 
   return (
     <SettingsCard title={title} description={description}>
       {values.map((value, index) => {
-        const isSyncedPlaceholder =
-          value.expression.startsWith('<SYNCED: ') && value.expression.endsWith('>');
+        const isSyncedPlaceholder = isSyncedTag(value.expression);
         const syncedUrl = isSyncedPlaceholder
-          ? value.expression.slice('<SYNCED: '.length, -1).trim()
+          ? parseSyncedUrl(value.expression)
           : '';
 
         return (
@@ -485,7 +501,7 @@ export function ToggleableTextInputs({
                   placeholder={placeholder}
                   disabled={value.enabled === false}
                   onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
+                    if (checkManualSyncTag(newValue)) return;
                     onExpressionChange(newValue, index);
                   }}
                 />
@@ -519,7 +535,7 @@ export function ToggleableTextInputs({
           renderType="nameable"
           hideList
           onUrlAdded={handleUrlAdded}
-          existingUrls={values.filter((v) => v.expression.startsWith('<SYNCED: ') && v.expression.endsWith('>')).map((v) => v.expression.slice('<SYNCED: '.length, -1).trim())}
+          existingUrls={existingUrls}
         />
       )}
     </SettingsCard>
@@ -596,45 +612,20 @@ export function TwoTextInputs({
     title
   );
 
-  const hasAutoAppended = useRef(false);
-  useEffect(() => {
-    if (
-      syncConfig?.urls &&
-      syncConfig.urls.length > 0 &&
-      !hasAutoAppended.current
-    ) {
-      hasAutoAppended.current = true;
-      let newValues = [...valuesRef.current];
-      let changed = false;
-      for (const url of syncConfig.urls) {
-        if (!newValues.some((v) => v.name === `<SYNCED: ${url}>`)) {
-          newValues.push({ name: `<SYNCED: ${url}>`, value: `<SYNCED: ${url}>` });
-          changed = true;
-        }
-      }
-      if (changed) {
-        onValuesChange(newValues);
-      }
-      // Clear legacy array after migration
-      syncConfig.onUrlsChange([]);
-    }
-  }, [syncConfig?.urls, onValuesChange]);
-
-  const handleUrlAdded = useCallback(
-    (url: string) => {
-      onValuesChange([...valuesRef.current, { name: `<SYNCED: ${url}>`, value: `<SYNCED: ${url}>` }]);
-    },
-    [onValuesChange]
+  const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
+    syncConfig,
+    values,
+    valuesRef,
+    onValuesChange,
+    (v) => v.name,
+    (url) => ({ name: makeSyncedTag(url), value: makeSyncedTag(url) })
   );
 
   return (
     <SettingsCard title={title} description={description}>
       {values.map((value, index) => {
-        const isSyncedPlaceholder =
-          value.name.startsWith('<SYNCED: ') && value.name.endsWith('>');
-        const syncedUrl = isSyncedPlaceholder
-          ? value.name.slice('<SYNCED: '.length, -1).trim()
-          : '';
+        const isSyncedPlaceholder = isSyncedTag(value.name);
+        const syncedUrl = isSyncedPlaceholder ? parseSyncedUrl(value.name) : '';
 
         return (
           <div key={index} className="flex gap-2">
@@ -644,9 +635,9 @@ export function TwoTextInputs({
                   value={value.name}
                   label={keyName}
                   placeholder={keyPlaceholder}
-                  onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
-                    onKeyChange(newValue, index);
+                  onValueChange={(val) => {
+                    if (checkManualSyncTag(val)) return;
+                    onKeyChange(val, index);
                   }}
                 />
               </div>
@@ -664,7 +655,7 @@ export function TwoTextInputs({
                   label={valueName}
                   placeholder={valuePlaceholder}
                   onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
+                    if (checkManualSyncTag(newValue)) return;
                     onValueChange(newValue, index);
                   }}
                 />
@@ -696,7 +687,7 @@ export function TwoTextInputs({
           renderType="nameable"
           hideList
           onUrlAdded={handleUrlAdded}
-          existingUrls={values.filter((v) => v.name.startsWith('<SYNCED: ') && v.name.endsWith('>')).map((v) => v.name.slice('<SYNCED: '.length, -1).trim())}
+          existingUrls={existingUrls}
         />
       )}
     </SettingsCard>
@@ -770,45 +761,20 @@ export function RankedExpressionInputs({
     title
   );
 
-  const hasAutoAppended = useRef(false);
-  useEffect(() => {
-    if (
-      syncConfig?.urls &&
-      syncConfig.urls.length > 0 &&
-      !hasAutoAppended.current
-    ) {
-      hasAutoAppended.current = true;
-      let newValues = [...valuesRef.current];
-      let changed = false;
-      for (const url of syncConfig.urls) {
-        if (!newValues.some((v) => v.expression === `<SYNCED: ${url}>`)) {
-          newValues.push({ expression: `<SYNCED: ${url}>`, score: 0, enabled: true });
-          changed = true;
-        }
-      }
-      if (changed) {
-        onValuesChange(newValues);
-      }
-      // Clear legacy array after migration
-      syncConfig.onUrlsChange([]);
-    }
-  }, [syncConfig?.urls, onValuesChange]);
-
-  const handleUrlAdded = useCallback(
-    (url: string) => {
-      onValuesChange([...valuesRef.current, { expression: `<SYNCED: ${url}>`, score: 0, enabled: true }]);
-    },
-    [onValuesChange]
+  const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
+    syncConfig,
+    values,
+    valuesRef,
+    onValuesChange,
+    (v) => v.expression,
+    (url) => ({ expression: makeSyncedTag(url), score: 0, enabled: true })
   );
 
   return (
     <SettingsCard title={title} description={description}>
       {values.map((value, index) => {
-        const isSyncedPlaceholder =
-          value.expression.startsWith('<SYNCED: ') && value.expression.endsWith('>');
-        const syncedUrl = isSyncedPlaceholder
-          ? value.expression.slice('<SYNCED: '.length, -1).trim()
-          : '';
+        const isSyncedPlaceholder = isSyncedTag(value.expression);
+        const syncedUrl = isSyncedPlaceholder ? parseSyncedUrl(value.expression) : '';
 
         return (
           <div key={index} className="flex gap-2 items-end">
@@ -838,7 +804,7 @@ export function RankedExpressionInputs({
                   placeholder="addon(type(streams, 'debrid'), 'TorBox')"
                   disabled={value.enabled === false}
                   onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
+                    if (checkManualSyncTag(newValue)) return;
                     onExpressionChange(newValue, index);
                   }}
                 />
@@ -889,7 +855,7 @@ export function RankedExpressionInputs({
           renderType="ranked"
           hideList
           onUrlAdded={handleUrlAdded}
-          existingUrls={values.filter((v) => v.expression.startsWith('<SYNCED: ') && v.expression.endsWith('>')).map((v) => v.expression.slice('<SYNCED: '.length, -1).trim())}
+          existingUrls={existingUrls}
         />
       )}
     </SettingsCard>
@@ -961,45 +927,20 @@ export function RankedRegexInputs({
     title
   );
 
-  const hasAutoAppended = useRef(false);
-  useEffect(() => {
-    if (
-      syncConfig?.urls &&
-      syncConfig.urls.length > 0 &&
-      !hasAutoAppended.current
-    ) {
-      hasAutoAppended.current = true;
-      let newValues = [...valuesRef.current];
-      let changed = false;
-      for (const url of syncConfig.urls) {
-        if (!newValues.some((v) => v.pattern === `<SYNCED: ${url}>`)) {
-          newValues.push({ pattern: `<SYNCED: ${url}>`, name: url, score: 0 });
-          changed = true;
-        }
-      }
-      if (changed) {
-        onValuesChange(newValues);
-      }
-      // Clear legacy array after migration
-      syncConfig.onUrlsChange([]);
-    }
-  }, [syncConfig?.urls, onValuesChange]);
-
-  const handleUrlAdded = useCallback(
-    (url: string) => {
-      onValuesChange([...valuesRef.current, { pattern: `<SYNCED: ${url}>`, name: url, score: 0 }]);
-    },
-    [onValuesChange]
+  const { handleUrlAdded, existingUrls } = useSyncedUrlMigration(
+    syncConfig,
+    values,
+    valuesRef,
+    onValuesChange,
+    (v) => v.pattern,
+    (url) => ({ pattern: makeSyncedTag(url), name: url, score: 0 })
   );
 
   return (
     <SettingsCard title={title} description={description}>
       {values.map((value, index) => {
-        const isSyncedPlaceholder =
-          value.pattern.startsWith('<SYNCED: ') && value.pattern.endsWith('>');
-        const syncedUrl = isSyncedPlaceholder
-          ? value.pattern.slice('<SYNCED: '.length, -1).trim()
-          : '';
+        const isSyncedPlaceholder = isSyncedTag(value.pattern);
+        const syncedUrl = isSyncedPlaceholder ? parseSyncedUrl(value.pattern) : '';
 
         return (
           <div
@@ -1019,7 +960,7 @@ export function RankedRegexInputs({
                   label="Pattern"
                   placeholder="Regex Pattern"
                   onValueChange={(newValue) => {
-                    if (newValue.includes('<SYNCED')) return;
+                    if (checkManualSyncTag(newValue)) return;
                     onPatternChange(newValue, index);
                   }}
                 />
@@ -1079,7 +1020,7 @@ export function RankedRegexInputs({
           renderType="ranked"
           hideList
           onUrlAdded={handleUrlAdded}
-          existingUrls={values.filter((v) => v.pattern.startsWith('<SYNCED: ') && v.pattern.endsWith('>')).map((v) => v.pattern.slice('<SYNCED: '.length, -1).trim())}
+          existingUrls={existingUrls}
         />
       )}
     </SettingsCard>
