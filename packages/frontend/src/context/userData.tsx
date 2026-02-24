@@ -6,6 +6,7 @@ import {
   SERVICE_DETAILS,
   DEFAULT_PRECACHE_SELECTOR,
 } from '../../../core/src/utils/constants';
+import { makeSyncedTag } from '../../../core/src/utils/synced-helpers';
 import { useStatus } from './status';
 
 const USER_DATA_KEY = 'aiostreams-user-data';
@@ -230,6 +231,99 @@ export function applyMigrations(config: any): UserData {
       }
       return preset;
     });
+  }
+
+  // migrate legacy synced URL arrays to inline <SYNCED: url> tags
+  // Toggleable SEL expressions
+  const selPrefixes = ['required', 'excluded', 'included', 'preferred'] as const;
+  for (const prefix of selPrefixes) {
+    const urlKey =
+      `synced${prefix.charAt(0).toUpperCase() + prefix.slice(1)}StreamExpressionUrls` as keyof UserData;
+    const valuesKey = `${prefix}StreamExpressions` as keyof UserData;
+    const urls = (config[urlKey] as string[]) || [];
+    if (urls.length && Array.isArray(config[valuesKey])) {
+      const existing = config[valuesKey] as any[];
+      const toAdd = urls.filter(
+        (url: string) => !existing.some((v: any) => v.expression === makeSyncedTag(url))
+      );
+      if (toAdd.length) {
+        config[valuesKey] = [
+          ...existing,
+          ...toAdd.map((url: string) => ({ expression: makeSyncedTag(url), enabled: true })),
+        ];
+      }
+      config[urlKey] = [] as any;
+    }
+  }
+
+  // Ranked SEL expressions
+  if (
+    Array.isArray(config.syncedRankedStreamExpressionUrls) &&
+    config.syncedRankedStreamExpressionUrls.length &&
+    Array.isArray(config.rankedStreamExpressions)
+  ) {
+    const urls = config.syncedRankedStreamExpressionUrls;
+    const existing = config.rankedStreamExpressions;
+    const toAdd = urls.filter(
+      (url: string) => !existing.some((v: any) => v.expression === makeSyncedTag(url))
+    );
+    if (toAdd.length) {
+      config.rankedStreamExpressions = [
+        ...existing,
+        ...toAdd.map((url: string) => ({
+          expression: makeSyncedTag(url),
+          score: 0,
+          enabled: true,
+        })),
+      ];
+    }
+    config.syncedRankedStreamExpressionUrls = [];
+  }
+
+  // Simple regex (string arrays)
+  const regexPrefixes = ['required', 'excluded', 'included', 'preferred'] as const;
+  for (const prefix of regexPrefixes) {
+    const urlKey =
+      `synced${prefix.charAt(0).toUpperCase() + prefix.slice(1)}RegexUrls` as keyof UserData;
+    const valuesKey = `${prefix}Regex` as keyof UserData;
+    const urls = (config[urlKey] as string[]) || [];
+    if (urls.length && Array.isArray(config[valuesKey])) {
+      const existing = config[valuesKey] as any[];
+      const toAdd = urls.filter(
+        (url: string) => !existing.some((v: any) => v === makeSyncedTag(url))
+      );
+      if (toAdd.length) {
+        config[valuesKey] = [
+          ...existing,
+          ...toAdd.map((url: string) => makeSyncedTag(url)),
+        ];
+      }
+      config[urlKey] = [] as any;
+    }
+  }
+
+  // Ranked regex patterns
+  if (
+    Array.isArray(config.syncedRankedRegexUrls) &&
+    config.syncedRankedRegexUrls.length &&
+    Array.isArray(config.rankedRegexPatterns)
+  ) {
+    const urls = config.syncedRankedRegexUrls;
+    const existing = config.rankedRegexPatterns;
+    const toAdd = urls.filter(
+      (url: string) => !existing.some((v: any) => v.pattern === makeSyncedTag(url))
+    );
+    if (toAdd.length) {
+      config.rankedRegexPatterns = [
+        ...existing,
+        ...toAdd.map((url: string) => ({
+          pattern: makeSyncedTag(url),
+          name: url,
+          score: 0,
+        })),
+      ];
+    }
+    config.syncedRankedRegexUrls = [];
   }
 
   return config;
