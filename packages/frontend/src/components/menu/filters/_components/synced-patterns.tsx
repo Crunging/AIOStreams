@@ -105,7 +105,7 @@ interface SelEditingItemState {
 /**
  * Renders synced patterns/expressions for a single URL.
  */
-function SyncedPatterns({
+export function SyncedPatterns({
   renderType,
   syncMode,
   syncedValues,

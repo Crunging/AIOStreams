@@ -6,7 +6,7 @@ import {
   SERVICE_DETAILS,
   DEFAULT_PRECACHE_SELECTOR,
 } from '../../../core/src/utils/constants';
-import { makeSyncedTag } from '../../../core/src/utils/synced-helpers';
+import { makeSyncedTag } from '../utils/synced';
 import { useStatus } from './status';
 
 const USER_DATA_KEY = 'aiostreams-user-data';
@@ -240,8 +240,9 @@ export function applyMigrations(config: any): UserData {
     const urlKey =
       `synced${prefix.charAt(0).toUpperCase() + prefix.slice(1)}StreamExpressionUrls` as keyof UserData;
     const valuesKey = `${prefix}StreamExpressions` as keyof UserData;
-    const urls = (config[urlKey] as string[]) || [];
-    if (urls.length && Array.isArray(config[valuesKey])) {
+    const urls = Array.from(new Set(config[urlKey] as string[] || [])) as string[];
+    if (urls.length) {
+      if (!Array.isArray(config[valuesKey])) config[valuesKey] = [];
       const existing = config[valuesKey] as any[];
       const toAdd = urls.filter(
         (url: string) => !existing.some((v: any) => v.expression === makeSyncedTag(url))
@@ -259,10 +260,10 @@ export function applyMigrations(config: any): UserData {
   // Ranked SEL expressions
   if (
     Array.isArray(config.syncedRankedStreamExpressionUrls) &&
-    config.syncedRankedStreamExpressionUrls.length &&
-    Array.isArray(config.rankedStreamExpressions)
+    config.syncedRankedStreamExpressionUrls.length
   ) {
-    const urls = config.syncedRankedStreamExpressionUrls;
+    if (!Array.isArray(config.rankedStreamExpressions)) config.rankedStreamExpressions = [];
+    const urls = Array.from(new Set(config.syncedRankedStreamExpressionUrls as string[])) as string[];
     const existing = config.rankedStreamExpressions;
     const toAdd = urls.filter(
       (url: string) => !existing.some((v: any) => v.expression === makeSyncedTag(url))
@@ -286,8 +287,9 @@ export function applyMigrations(config: any): UserData {
     const urlKey =
       `synced${prefix.charAt(0).toUpperCase() + prefix.slice(1)}RegexUrls` as keyof UserData;
     const valuesKey = `${prefix}Regex` as keyof UserData;
-    const urls = (config[urlKey] as string[]) || [];
-    if (urls.length && Array.isArray(config[valuesKey])) {
+    const urls = Array.from(new Set(config[urlKey] as string[] || [])) as string[];
+    if (urls.length) {
+      if (!Array.isArray(config[valuesKey])) config[valuesKey] = [];
       const existing = config[valuesKey] as any[];
       const toAdd = urls.filter(
         (url: string) => !existing.some((v: any) => v === makeSyncedTag(url))
@@ -305,10 +307,10 @@ export function applyMigrations(config: any): UserData {
   // Ranked regex patterns
   if (
     Array.isArray(config.syncedRankedRegexUrls) &&
-    config.syncedRankedRegexUrls.length &&
-    Array.isArray(config.rankedRegexPatterns)
+    config.syncedRankedRegexUrls.length
   ) {
-    const urls = config.syncedRankedRegexUrls;
+    if (!Array.isArray(config.rankedRegexPatterns)) config.rankedRegexPatterns = [];
+    const urls = Array.from(new Set(config.syncedRankedRegexUrls as string[])) as string[];
     const existing = config.rankedRegexPatterns;
     const toAdd = urls.filter(
       (url: string) => !existing.some((v: any) => v.pattern === makeSyncedTag(url))
