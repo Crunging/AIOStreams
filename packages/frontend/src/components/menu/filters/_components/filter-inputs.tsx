@@ -1,5 +1,5 @@
 'use client';
-import { ReactNode, useCallback, useRef, useMemo } from 'react';
+import { ReactNode, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useDisclosure } from '@/hooks/disclosure';
 import { toast } from 'sonner';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -46,20 +46,28 @@ function useSyncedUrlMigration<T>({
   onValuesChange,
   getExpression,
   makePlaceholder,
+  syncConfig,
 }: {
   values: T[];
   onValuesChange: (v: T[]) => void;
   getExpression: (item: T) => string;
   makePlaceholder: (url: string) => T;
+  syncConfig?: SyncConfig;
 }) {
   const valuesRef = useRef(values);
   valuesRef.current = values;
 
+  const onValuesChangeRef = useRef(onValuesChange);
+  onValuesChangeRef.current = onValuesChange;
+
+  const makePlaceholderRef = useRef(makePlaceholder);
+  makePlaceholderRef.current = makePlaceholder;
+
   const handleUrlAdded = useCallback(
     (url: string) => {
-      onValuesChange([...valuesRef.current, makePlaceholder(url)]);
+      onValuesChangeRef.current([...valuesRef.current, makePlaceholderRef.current(url)]);
     },
-    [onValuesChange, makePlaceholder]
+    []
   );
 
   const existingUrls = useMemo(
@@ -70,6 +78,17 @@ function useSyncedUrlMigration<T>({
         .map(parseSyncedUrl),
     [values, getExpression]
   );
+
+  useEffect(() => {
+    if (!syncConfig?.urls) return;
+    const missing = syncConfig.urls.filter((u) => !existingUrls.includes(u));
+    if (missing.length > 0) {
+      onValuesChangeRef.current([
+        ...valuesRef.current,
+        ...missing.map((u) => makePlaceholderRef.current(u)),
+      ]);
+    }
+  }, [syncConfig?.urls, existingUrls]);
 
   const getSyncedUrl = useCallback(
     (item: T) => {
@@ -298,6 +317,7 @@ export function TextInputs({
     onValuesChange,
     getExpression: (v) => v,
     makePlaceholder: (url) => makeSyncedTag(url),
+    syncConfig,
   });
 
   const getExportData = useCallback(() => ({ values: valuesRef.current }), []);
@@ -418,6 +438,7 @@ export function ToggleableTextInputs({
     onValuesChange,
     getExpression: (v) => v.expression,
     makePlaceholder: (url) => ({ expression: makeSyncedTag(url), enabled: true }),
+    syncConfig,
   });
 
   const getExportData = useCallback(
@@ -577,6 +598,7 @@ export function TwoTextInputs({
     onValuesChange,
     getExpression: (v) => v.name,
     makePlaceholder: (url) => ({ name: makeSyncedTag(url), value: makeSyncedTag(url) }),
+    syncConfig,
   });
 
   const getExportData = useCallback(
@@ -716,6 +738,7 @@ export function RankedExpressionInputs({
     onValuesChange,
     getExpression: (v) => v.expression,
     makePlaceholder: (url) => ({ expression: makeSyncedTag(url), score: 0, enabled: true }),
+    syncConfig,
   });
 
   const getExportData = useCallback(
@@ -879,6 +902,7 @@ export function RankedRegexInputs({
     onValuesChange,
     getExpression: (v) => v.pattern,
     makePlaceholder: (url) => ({ pattern: makeSyncedTag(url), name: url, score: 0 }),
+    syncConfig,
   });
 
   const getExportData = useCallback(
