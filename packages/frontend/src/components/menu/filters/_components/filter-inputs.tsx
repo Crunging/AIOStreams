@@ -30,6 +30,10 @@ import {
 } from 'react-icons/fa';
 import { UserData } from '@aiostreams/core';
 
+/**
+ * Check if a value is a manually entered sync tag (e.g. "<SYNCED: url>")
+ * which is not allowed in expression inputs.
+ */
 function checkManualSyncTag(value: string): boolean {
   if (isManualSyncTagAttempt(value)) {
     toast.warning('Manual entry of synchronized tags is not allowed.');
@@ -241,7 +245,9 @@ function ListFooter({
   );
 }
 
-// Placeholder inline container for synced URLs
+/**
+ * Placeholder inline container for synced URLs
+ */
 function PlaceholderSyncedUrls({
   syncConfig,
   renderType,
