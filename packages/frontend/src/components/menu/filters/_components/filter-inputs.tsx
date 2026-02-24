@@ -10,10 +10,7 @@ import { Tooltip } from '../../../ui/tooltip';
 import { Checkbox } from '../../../ui/checkbox';
 import { SettingsCard } from '../../../shared/settings-card';
 import { ImportModal } from '../../../shared/import-modal';
-import {
-  SyncedUrlInputs,
-  type SyncConfig,
-} from './synced-patterns';
+import { SyncedUrlInputs, type SyncConfig } from './synced-patterns';
 import {
   isSyncedTag,
   parseSyncedUrl,
@@ -31,8 +28,7 @@ import {
 import { UserData } from '@aiostreams/core';
 
 /**
- * Check if a value is a manually entered sync tag (e.g. "<SYNCED: url>")
- * which is not allowed in expression inputs.
+ * Validates if the input contains a manually entered synchronization tag.
  */
 function checkManualSyncTag(value: string): boolean {
   if (isManualSyncTagAttempt(value)) {
@@ -43,20 +39,14 @@ function checkManualSyncTag(value: string): boolean {
 }
 
 /**
- * Hook providing synced-URL utilities: `handleUrlAdded` to append a new
- * synced placeholder, and `existingUrls` for deduplication in the add form.
- * It also provides `isSynced` and `getSyncedUrl` helpers for rendering.
- *
- * Legacy URL migration is handled at the data boundary in `Content()`.
+ * Hook providing synced-URL utilities.
  */
 function useSyncedUrlMigration<T>({
-  syncConfig,
   values,
   onValuesChange,
   getExpression,
   makePlaceholder,
 }: {
-  syncConfig: SyncConfig | undefined;
   values: T[];
   onValuesChange: (v: T[]) => void;
   getExpression: (item: T) => string;
@@ -81,17 +71,47 @@ function useSyncedUrlMigration<T>({
     [values, getExpression]
   );
 
-  const isSynced = useCallback(
-    (item: T) => isSyncedTag(getExpression(item)),
+  const getSyncedUrl = useCallback(
+    (item: T) => {
+      const expr = getExpression(item);
+      return isSyncedTag(expr) ? parseSyncedUrl(expr) : '';
+    },
     [getExpression]
   );
 
-  const getSyncedUrl = useCallback(
-    (item: T) => (isSynced(item) ? parseSyncedUrl(getExpression(item)) : ''),
-    [getExpression, isSynced]
+  return { valuesRef, handleUrlAdded, existingUrls, getSyncedUrl };
+}
+
+/**
+ * Placeholder inline container for synced URLs.
+ */
+function PlaceholderSyncedUrls({
+  syncConfig,
+  renderType,
+  url,
+}: {
+  syncConfig: SyncConfig;
+  renderType: 'simple' | 'nameable' | 'ranked';
+  url: string;
+}) {
+  const singleUrlConfig = useMemo(
+    () => ({ ...syncConfig, urls: [url] }),
+    [syncConfig, url]
   );
 
-  return { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl };
+  return (
+    <div className="border border-dashed border-[--brand]/40 rounded-md p-3 bg-[--brand]/5 relative mt-4 mb-1">
+      <div className="absolute -top-3 left-3 bg-[--background] px-1 text-xs text-[--brand] font-medium">
+        Synced URLs
+      </div>
+      <SyncedUrlInputs
+        syncConfig={singleUrlConfig}
+        renderType={renderType}
+        hideHeader
+        hideAddForm
+      />
+    </div>
+  );
 }
 
 // Shared helpers
@@ -111,7 +131,7 @@ function downloadJson(data: unknown, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Derive a filename from a label, e.g. "Required Keywords" → "required-keywords-2026-02-08.14-56".json */
+/** Derive a filename from a label. */
 function labelToFilename(label: string) {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -124,8 +144,7 @@ function labelToFilename(label: string) {
 }
 
 /**
- * Hook that encapsulates the import-modal disclosure, a validated import
- * handler, and a JSON-export handler.
+ * Hook for import/export and modal disclosure.
  */
 function useImportExport<T>(
   getExportData: () => unknown,
@@ -248,282 +267,6 @@ function ListFooter({
   );
 }
 
-/**
- * Placeholder inline container for synced URLs
- */
-function PlaceholderSyncedUrls({
-  syncConfig,
-  renderType,
-  url,
-}: {
-  syncConfig: SyncConfig;
-  renderType: 'simple' | 'nameable' | 'ranked';
-  url: string;
-}) {
-  const singleUrlConfig = useMemo(
-    () => ({ ...syncConfig, urls: [url] }),
-    [syncConfig, url]
-  );
-
-  return (
-    <div className="border border-dashed border-[--brand]/40 rounded-md p-3 bg-[--brand]/5 relative mt-4 mb-1">
-      <div className="absolute -top-3 left-3 bg-[--background] px-1 text-xs text-[--brand] font-medium">
-        Synced URLs
-      </div>
-      <SyncedUrlInputs
-        syncConfig={singleUrlConfig}
-        renderType={renderType}
-        hideHeader
-        hideAddForm
-      />
-    </div>
-  );
-}
-
-// Layout helper for filter inputs
-
-interface FilterInputContainerProps {
-  title: string;
-  description: string;
-  children: ReactNode;
-  onAdd: () => void;
-  importExport: {
-    modal: { open: () => void; isOpen: boolean; toggle: () => void };
-    handleImport: (data: any) => void;
-    handleExport: () => void;
-  };
-  sync?: {
-    syncConfig?: SyncConfig;
-    handleUrlAdded: (url: string) => void;
-    existingUrls: string[];
-    renderType: 'simple' | 'nameable' | 'ranked';
-  };
-}
-
-function FilterInputContainer({
-  title,
-  description,
-  children,
-  onAdd,
-  importExport,
-  sync,
-}: FilterInputContainerProps) {
-  return (
-    <SettingsCard title={title} description={description}>
-      {children}
-      <ListFooter
-        onAdd={onAdd}
-        onImportClick={importExport.modal.open}
-        onExport={importExport.handleExport}
-      />
-      <ImportModal
-        open={importExport.modal.isOpen}
-        onOpenChange={importExport.modal.toggle}
-        onImport={importExport.handleImport}
-      />
-      {sync?.syncConfig && (
-        <SyncedUrlInputs
-          syncConfig={sync.syncConfig}
-          renderType={sync.renderType}
-          hideList
-          onUrlAdded={sync.handleUrlAdded}
-          existingUrls={sync.existingUrls}
-        />
-      )}
-    </SettingsCard>
-  );
-}
-
-// TextInputs
-
-// Item components
-
-function TextInputItem({
-  value,
-  index,
-  itemName,
-  placeholder,
-  disabled,
-  syncedUrl,
-  syncConfig,
-  onValueChange,
-  items,
-  onItemsChange,
-}: {
-  value: string;
-  index: number;
-  itemName: string;
-  placeholder?: string;
-  disabled?: boolean;
-  syncedUrl: string;
-  syncConfig?: SyncConfig;
-  onValueChange: (val: string, index: number) => void;
-  items: string[];
-  onItemsChange: (items: string[]) => void;
-}) {
-  return (
-    <div className="flex gap-2">
-      <div className="flex-1">
-        {syncedUrl && syncConfig ? (
-          <PlaceholderSyncedUrls
-            syncConfig={syncConfig}
-            renderType="simple"
-            url={syncedUrl}
-          />
-        ) : (
-          <TextInput
-            value={value}
-            label={itemName}
-            placeholder={placeholder}
-            disabled={disabled}
-            onValueChange={(newValue) => onValueChange(newValue, index)}
-          />
-        )}
-      </div>
-      <div className="flex gap-1 items-end pb-1">
-        <ItemActions
-          items={items}
-          index={index}
-          onItemsChange={onItemsChange}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ToggleableTextInputItem({
-  value,
-  index,
-  placeholder,
-  syncedUrl,
-  syncConfig,
-  onExpressionChange,
-  onEnabledChange,
-  items,
-  onItemsChange,
-}: {
-  value: { expression: string; enabled: boolean };
-  index: number;
-  placeholder?: string;
-  syncedUrl: string;
-  syncConfig?: SyncConfig;
-  onExpressionChange: (val: string, index: number) => void;
-  onEnabledChange?: (enabled: boolean, index: number) => void;
-  items: { expression: string; enabled: boolean }[];
-  onItemsChange: (items: { expression: string; enabled: boolean }[]) => void;
-}) {
-  return (
-    <div className="flex gap-2 items-end">
-      <div className="flex items-center pb-0.5">
-        <Checkbox
-          value={value.enabled ?? true}
-          defaultValue={true}
-          size="lg"
-          onValueChange={(v) => {
-            if (onEnabledChange) {
-              onEnabledChange(v === true, index);
-            }
-          }}
-        />
-      </div>
-      <div className="flex-1">
-        {syncedUrl && syncConfig ? (
-          <PlaceholderSyncedUrls
-            syncConfig={syncConfig}
-            renderType="nameable"
-            url={syncedUrl}
-          />
-        ) : (
-          <TextInput
-            value={value.expression}
-            label="Expression"
-            placeholder={placeholder}
-            disabled={value.enabled === false}
-            onValueChange={(newValue) => onExpressionChange(newValue, index)}
-          />
-        )}
-      </div>
-      <div className="flex gap-1 items-end pb-1">
-        <ItemActions
-          items={items}
-          index={index}
-          onItemsChange={onItemsChange}
-        />
-      </div>
-    </div>
-  );
-}
-
-function KeyValueInputItem({
-  value,
-  index,
-  keyName,
-  keyPlaceholder,
-  valueName,
-  valuePlaceholder,
-  disabled,
-  syncedUrl,
-  syncConfig,
-  onKeyChange,
-  onValueChange,
-  items,
-  onItemsChange,
-}: {
-  value: { name: string; value: string };
-  index: number;
-  keyName: string;
-  keyPlaceholder: string;
-  valueName: string;
-  valuePlaceholder: string;
-  disabled?: boolean;
-  syncedUrl: string;
-  syncConfig?: SyncConfig;
-  onKeyChange: (val: string, index: number) => void;
-  onValueChange: (val: string, index: number) => void;
-  items: { name: string; value: string }[];
-  onItemsChange: (items: { name: string; value: string }[]) => void;
-}) {
-  return (
-    <div className="flex gap-2">
-      {!syncedUrl && (
-        <div className="flex-1">
-          <TextInput
-            value={value.name}
-            label={keyName}
-            placeholder={keyPlaceholder}
-            disabled={disabled}
-            onValueChange={(val) => onKeyChange(val, index)}
-          />
-        </div>
-      )}
-      <div className="flex-1">
-        {syncedUrl && syncConfig ? (
-          <PlaceholderSyncedUrls
-            syncConfig={syncConfig}
-            renderType="nameable"
-            url={syncedUrl}
-          />
-        ) : (
-          <TextInput
-            value={value.value}
-            label={valueName}
-            placeholder={valuePlaceholder}
-            disabled={disabled}
-            onValueChange={(newValue) => onValueChange(newValue, index)}
-          />
-        )}
-      </div>
-      <div className="flex gap-1 items-end pb-1">
-        <ItemActions
-          items={items}
-          index={index}
-          onItemsChange={onItemsChange}
-        />
-      </div>
-    </div>
-  );
-}
-
 // TextInputs
 
 export type TextInputProps = {
@@ -547,20 +290,18 @@ export function TextInputs({
   syncConfig,
   disabled,
 }: TextInputProps) {
-  const getExpression = useCallback((v: string) => v, []);
-  const makePlaceholder = useCallback((url: string) => makeSyncedTag(url), []);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  const { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl } =
-    useSyncedUrlMigration({
-      syncConfig,
-      values,
-      onValuesChange,
-      getExpression,
-      makePlaceholder,
-    });
+  const { handleUrlAdded, existingUrls, getSyncedUrl } = useSyncedUrlMigration({
+    values,
+    onValuesChange,
+    getExpression: (v) => v,
+    makePlaceholder: (url) => makeSyncedTag(url),
+  });
 
-  const { modal, handleImport, handleExport } = useImportExport(
-    () => ({ values: valuesRef.current }),
+  const getExportData = useCallback(() => ({ values: valuesRef.current }), []);
+  const handleImportData = useCallback(
     (data: any) => {
       if (Array.isArray(data.values)) {
         onValuesChange(data.values);
@@ -568,41 +309,81 @@ export function TextInputs({
       }
       return false;
     },
+    [onValuesChange]
+  );
+  const { modal, handleImport, handleExport } = useImportExport(
+    getExportData,
+    handleImportData,
     label
   );
 
+  const handleValueChange = useCallback(
+    (newValue: string, index: number) => {
+      if (checkManualSyncTag(newValue)) return;
+      const current = valuesRef.current;
+      onValuesChange([
+        ...current.slice(0, index),
+        newValue,
+        ...current.slice(index + 1),
+      ]);
+    },
+    [onValuesChange]
+  );
+
   return (
-    <FilterInputContainer
-      title={label}
-      description={help}
-      onAdd={() => onValuesChange([...values, ''])}
-      importExport={{ modal, handleImport, handleExport }}
-      sync={{ syncConfig, handleUrlAdded, existingUrls, renderType: 'simple' }}
-    >
-      {values.map((value, index) => (
-        <TextInputItem
-          key={index}
-          value={value}
-          index={index}
-          itemName={itemName}
-          placeholder={placeholder}
-          disabled={disabled}
-          syncedUrl={getSyncedUrl(value)}
+    <SettingsCard title={label} description={help} key={label}>
+      {values.map((value, index) => {
+        const syncedUrl = getSyncedUrl(value);
+        return (
+          <div key={index} className="flex gap-2">
+            <div className="flex-1">
+              {syncedUrl && syncConfig ? (
+                <PlaceholderSyncedUrls
+                  syncConfig={syncConfig}
+                  renderType="simple"
+                  url={syncedUrl}
+                />
+              ) : (
+                <TextInput
+                  value={value}
+                  label={itemName}
+                  placeholder={placeholder}
+                  disabled={disabled}
+                  onValueChange={(newValue) =>
+                    handleValueChange(newValue, index)
+                  }
+                />
+              )}
+            </div>
+            <div className="flex gap-1 items-end pb-1">
+              <ItemActions
+                items={values}
+                index={index}
+                onItemsChange={onValuesChange}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <ListFooter
+        onAdd={() => onValuesChange([...values, ''])}
+        onImportClick={modal.open}
+        onExport={handleExport}
+      />
+      <ImportModal
+        open={modal.isOpen}
+        onOpenChange={modal.toggle}
+        onImport={handleImport}
+      />
+      {syncConfig && (
+        <SyncedUrlInputs
           syncConfig={syncConfig}
-          onValueChange={(newValue) => {
-            if (checkManualSyncTag(newValue)) return;
-            const current = valuesRef.current;
-            onValuesChange([
-              ...current.slice(0, index),
-              newValue,
-              ...current.slice(index + 1),
-            ]);
-          }}
-          items={values}
-          onItemsChange={onValuesChange}
+          renderType="simple"
+          onUrlAdded={handleUrlAdded}
+          existingUrls={existingUrls}
         />
-      ))}
-    </FilterInputContainer>
+      )}
+    </SettingsCard>
   );
 }
 
@@ -629,30 +410,25 @@ export function ToggleableTextInputs({
   placeholder,
   syncConfig,
 }: ToggleableTextInputProps) {
-  const getExpression = useCallback((v: { expression: string }) => v.expression, []);
-  const makePlaceholder = useCallback(
-    (url: string) => ({
-      expression: makeSyncedTag(url),
-      enabled: true,
-    }),
-    []
-  );
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  const { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl } =
-    useSyncedUrlMigration({
-      syncConfig,
-      values,
-      onValuesChange,
-      getExpression,
-      makePlaceholder,
-    });
+  const { handleUrlAdded, existingUrls, getSyncedUrl } = useSyncedUrlMigration({
+    values,
+    onValuesChange,
+    getExpression: (v) => v.expression,
+    makePlaceholder: (url) => ({ expression: makeSyncedTag(url), enabled: true }),
+  });
 
-  const { modal, handleImport, handleExport } = useImportExport(
+  const getExportData = useCallback(
     () =>
       valuesRef.current.map((v) => ({
         expression: v.expression,
         enabled: v.enabled,
       })),
+    []
+  );
+  const handleImportData = useCallback(
     (data: any) => {
       // Support both new format [{expression, enabled}] and legacy format {values: string[]}
       if (
@@ -678,37 +454,83 @@ export function ToggleableTextInputs({
       }
       return false;
     },
+    [onValuesChange]
+  );
+  const { modal, handleImport, handleExport } = useImportExport(
+    getExportData,
+    handleImportData,
     title
   );
 
   return (
-    <FilterInputContainer
-      title={title}
-      description={description}
-      onAdd={() =>
-        onValuesChange([...values, { expression: '', enabled: true }])
-      }
-      importExport={{ modal, handleImport, handleExport }}
-      sync={{ syncConfig, handleUrlAdded, existingUrls, renderType: 'nameable' }}
-    >
-      {values.map((value, index) => (
-        <ToggleableTextInputItem
-          key={index}
-          value={value}
-          index={index}
-          placeholder={placeholder}
-          syncedUrl={getSyncedUrl(value)}
+    <SettingsCard title={title} description={description}>
+      {values.map((value, index) => {
+        const syncedUrl = getSyncedUrl(value);
+        return (
+          <div key={index} className="flex gap-2 items-end">
+            <div className="flex items-center pb-0.5">
+              <Checkbox
+                value={value.enabled ?? true}
+                defaultValue={true}
+                size="lg"
+                onValueChange={(v) => {
+                  if (onEnabledChange) {
+                    onEnabledChange(v === true, index);
+                  }
+                }}
+              />
+            </div>
+            <div className="flex-1">
+              {syncedUrl && syncConfig ? (
+                <PlaceholderSyncedUrls
+                  syncConfig={syncConfig}
+                  renderType="nameable"
+                  url={syncedUrl}
+                />
+              ) : (
+                <TextInput
+                  value={value.expression}
+                  label="Expression"
+                  placeholder={placeholder}
+                  disabled={value.enabled === false}
+                  onValueChange={(newValue) => {
+                    if (checkManualSyncTag(newValue)) return;
+                    onExpressionChange(newValue, index);
+                  }}
+                />
+              )}
+            </div>
+            <div className="flex gap-1 items-end pb-1">
+              <ItemActions
+                items={values}
+                index={index}
+                onItemsChange={onValuesChange}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <ListFooter
+        onAdd={() =>
+          onValuesChange([...values, { expression: '', enabled: true }])
+        }
+        onImportClick={modal.open}
+        onExport={handleExport}
+      />
+      <ImportModal
+        open={modal.isOpen}
+        onOpenChange={modal.toggle}
+        onImport={handleImport}
+      />
+      {syncConfig && (
+        <SyncedUrlInputs
           syncConfig={syncConfig}
-          onExpressionChange={(newValue, idx) => {
-            if (checkManualSyncTag(newValue)) return;
-            onExpressionChange(newValue, idx);
-          }}
-          onEnabledChange={onEnabledChange}
-          items={values}
-          onItemsChange={onValuesChange}
+          renderType="nameable"
+          onUrlAdded={handleUrlAdded}
+          existingUrls={existingUrls}
         />
-      ))}
-    </FilterInputContainer>
+      )}
+    </SettingsCard>
   );
 }
 
@@ -747,27 +569,22 @@ export function TwoTextInputs({
   disabled,
   syncConfig,
 }: KeyValueInputProps) {
-  const getExpression = useCallback((v: { name: string }) => v.name, []);
-  const makePlaceholder = useCallback(
-    (url: string) => ({
-      name: makeSyncedTag(url),
-      value: makeSyncedTag(url),
-    }),
-    []
-  );
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  const { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl } =
-    useSyncedUrlMigration({
-      syncConfig,
-      values,
-      onValuesChange,
-      getExpression,
-      makePlaceholder,
-    });
+  const { handleUrlAdded, existingUrls, getSyncedUrl } = useSyncedUrlMigration({
+    values,
+    onValuesChange,
+    getExpression: (v) => v.name,
+    makePlaceholder: (url) => ({ name: makeSyncedTag(url), value: makeSyncedTag(url) }),
+  });
 
-  const { modal, handleImport, handleExport } = useImportExport(
+  const getExportData = useCallback(
     () =>
       valuesRef.current.map((v) => ({ [keyId]: v.name, [valueId]: v.value })),
+    [keyId, valueId]
+  );
+  const handleImportData = useCallback(
     (data: any) => {
       if (
         Array.isArray(data) &&
@@ -786,209 +603,85 @@ export function TwoTextInputs({
       }
       return false;
     },
+    [onValuesChange, keyId, valueId]
+  );
+  const { modal, handleImport, handleExport } = useImportExport(
+    getExportData,
+    handleImportData,
     title
   );
 
   return (
-    <FilterInputContainer
-      title={title}
-      description={description}
-      onAdd={() => onValuesChange([...values, { name: '', value: '' }])}
-      importExport={{ modal, handleImport, handleExport }}
-      sync={{ syncConfig, handleUrlAdded, existingUrls, renderType: 'nameable' }}
-    >
-      {values.map((value, index) => (
-        <KeyValueInputItem
-          key={index}
-          value={value}
-          index={index}
-          keyName={keyName}
-          keyPlaceholder={keyPlaceholder}
-          valueName={valueName}
-          valuePlaceholder={valuePlaceholder}
-          disabled={disabled}
-          syncedUrl={getSyncedUrl(value)}
+    <SettingsCard title={title} description={description}>
+      {values.map((value, index) => {
+        const syncedUrl = getSyncedUrl(value);
+        return (
+          <div key={index} className="flex gap-2">
+            {!syncedUrl && (
+              <div className="flex-1">
+                <TextInput
+                  value={value.name}
+                  label={keyName}
+                  placeholder={keyPlaceholder}
+                  disabled={disabled}
+                  onValueChange={(newValue) => {
+                    if (checkManualSyncTag(newValue)) return;
+                    onKeyChange(newValue, index);
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex-1">
+              {syncedUrl && syncConfig ? (
+                <PlaceholderSyncedUrls
+                  syncConfig={syncConfig}
+                  renderType="nameable"
+                  url={syncedUrl}
+                />
+              ) : (
+                <TextInput
+                  value={value.value}
+                  label={valueName}
+                  placeholder={valuePlaceholder}
+                  disabled={disabled}
+                  onValueChange={(newValue) => {
+                    if (checkManualSyncTag(newValue)) return;
+                    onValueChange(newValue, index);
+                  }}
+                />
+              )}
+            </div>
+            <div className="flex gap-1 items-end pb-1">
+              <ItemActions
+                items={values}
+                index={index}
+                onItemsChange={onValuesChange}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <ListFooter
+        onAdd={() => onValuesChange([...values, { name: '', value: '' }])}
+        onImportClick={modal.open}
+        onExport={handleExport}
+      />
+      <ImportModal
+        open={modal.isOpen}
+        onOpenChange={modal.toggle}
+        onImport={handleImport}
+      />
+      {syncConfig && (
+        <SyncedUrlInputs
           syncConfig={syncConfig}
-          onKeyChange={(val, idx) => {
-            if (checkManualSyncTag(val)) return;
-            onKeyChange(val, idx);
-          }}
-          onValueChange={(val, idx) => {
-            if (checkManualSyncTag(val)) return;
-            onValueChange(val, idx);
-          }}
-          items={values}
-          onItemsChange={onValuesChange}
+          renderType="nameable"
+          onUrlAdded={handleUrlAdded}
+          existingUrls={existingUrls}
         />
-      ))}
-    </FilterInputContainer>
+      )}
+    </SettingsCard>
   );
 }
-
-function RankedExpressionItem({
-  value,
-  index,
-  syncedUrl,
-  syncConfig,
-  onExpressionChange,
-  onScoreChange,
-  onEnabledChange,
-  items,
-  onItemsChange,
-}: {
-  value: { expression: string; score: number; enabled: boolean };
-  index: number;
-  syncedUrl: string;
-  syncConfig?: SyncConfig;
-  onExpressionChange: (val: string, index: number) => void;
-  onScoreChange: (score: number, index: number) => void;
-  onEnabledChange?: (enabled: boolean, index: number) => void;
-  items: { expression: string; score: number; enabled: boolean }[];
-  onItemsChange: (
-    items: { expression: string; score: number; enabled: boolean }[]
-  ) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 p-3 border rounded-lg bg-[--background-secondary]/30">
-      <div className="flex gap-2 items-center">
-        <div className="flex items-center pb-0.5">
-          <Checkbox
-            value={value.enabled ?? true}
-            defaultValue={true}
-            size="lg"
-            onValueChange={(v) => {
-              if (onEnabledChange) {
-                onEnabledChange(v === true, index);
-              }
-            }}
-          />
-        </div>
-        <div className={syncedUrl ? 'flex-1' : 'flex-[3]'}>
-          {syncedUrl && syncConfig ? (
-            <PlaceholderSyncedUrls
-              syncConfig={syncConfig}
-              renderType="ranked"
-              url={syncedUrl}
-            />
-          ) : (
-            <TextInput
-              value={value.expression}
-              label="Expression"
-              placeholder="addon(type(streams, 'debrid'), 'TorBox')"
-              disabled={value.enabled === false}
-              onValueChange={(newValue) => onExpressionChange(newValue, index)}
-            />
-          )}
-        </div>
-        {!syncedUrl && (
-          <div className="flex-1">
-            <NumberInput
-              value={value.score}
-              defaultValue={0}
-              label="Score"
-              disabled={value.enabled === false}
-              onValueChange={(newValue) => onScoreChange(newValue || 0, index)}
-              min={-1_000_000}
-              max={1_000_000}
-              step={50}
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex justify-end items-center mt-1">
-        <div className="flex gap-1 pb-1">
-          <ItemActions
-            items={items}
-            index={index}
-            onItemsChange={onItemsChange}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RankedRegexItem({
-  value,
-  index,
-  syncedUrl,
-  syncConfig,
-  onPatternChange,
-  onNameChange,
-  onScoreChange,
-  items,
-  onItemsChange,
-}: {
-  value: { pattern: string; name?: string; score: number };
-  index: number;
-  syncedUrl: string;
-  syncConfig?: SyncConfig;
-  onPatternChange: (val: string, index: number) => void;
-  onNameChange: (val: string, index: number) => void;
-  onScoreChange: (score: number, index: number) => void;
-  items: { pattern: string; name?: string; score: number }[];
-  onItemsChange: (
-    items: { pattern: string; name?: string; score: number }[]
-  ) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 p-3 border rounded-lg bg-[--background-secondary]/30">
-      <div className="flex gap-2 w-full">
-        {syncedUrl && syncConfig ? (
-          <div className="flex-1">
-            <PlaceholderSyncedUrls
-              syncConfig={syncConfig}
-              renderType="ranked"
-              url={syncedUrl}
-            />
-          </div>
-        ) : (
-          <>
-            <div className="flex-1">
-              <TextInput
-                value={value.pattern}
-                label="Regex Pattern"
-                placeholder="e.g. ^\[.*\]"
-                onValueChange={(newValue) => onPatternChange(newValue, index)}
-              />
-            </div>
-            <div className="flex-1">
-              <TextInput
-                value={value.name || ''}
-                label="Visual Name"
-                placeholder="e.g. Release Group"
-                onValueChange={(newValue) => onNameChange(newValue, index)}
-              />
-            </div>
-          </>
-        )}
-        {!syncedUrl && (
-          <div className="flex-1">
-            <NumberInput
-              value={value.score}
-              defaultValue={0}
-              label="Score"
-              onValueChange={(newValue) => onScoreChange(newValue || 0, index)}
-              min={-1_000_000}
-              max={1_000_000}
-              step={50}
-            />
-          </div>
-        )}
-      </div>
-      <div className="flex justify-end items-center mt-1">
-        <div className="flex gap-1 pb-1">
-          <ItemActions
-            items={items}
-            index={index}
-            onItemsChange={onItemsChange}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 // RankedExpressionInputs
 
@@ -1015,32 +708,26 @@ export function RankedExpressionInputs({
   onEnabledChange,
   syncConfig,
 }: RankedExpressionInputProps) {
-  const getExpression = useCallback((v: { expression: string }) => v.expression, []);
-  const makePlaceholder = useCallback(
-    (url: string) => ({
-      expression: makeSyncedTag(url),
-      score: 0,
-      enabled: true,
-    }),
-    []
-  );
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  const { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl } =
-    useSyncedUrlMigration({
-      syncConfig,
-      values,
-      onValuesChange,
-      getExpression,
-      makePlaceholder,
-    });
+  const { handleUrlAdded, existingUrls, getSyncedUrl } = useSyncedUrlMigration({
+    values,
+    onValuesChange,
+    getExpression: (v) => v.expression,
+    makePlaceholder: (url) => ({ expression: makeSyncedTag(url), score: 0, enabled: true }),
+  });
 
-  const { modal, handleImport, handleExport } = useImportExport(
+  const getExportData = useCallback(
     () =>
       valuesRef.current.map((v) => ({
         expression: v.expression,
         score: v.score,
         enabled: v.enabled,
       })),
+    []
+  );
+  const handleImportData = useCallback(
     (data: any) => {
       if (
         Array.isArray(data) &&
@@ -1062,39 +749,100 @@ export function RankedExpressionInputs({
       }
       return false;
     },
+    [onValuesChange]
+  );
+  const { modal, handleImport, handleExport } = useImportExport(
+    getExportData,
+    handleImportData,
     title
   );
 
   return (
-    <FilterInputContainer
-      title={title}
-      description={description}
-      onAdd={() =>
-        onValuesChange([...values, { expression: '', score: 0, enabled: true }])
-      }
-      importExport={{ modal, handleImport, handleExport }}
-      sync={{ syncConfig, handleUrlAdded, existingUrls, renderType: 'ranked' }}
-    >
-      <div className="flex flex-col gap-3">
-        {values.map((value, index) => (
-          <RankedExpressionItem
-            key={index}
-            value={value}
-            index={index}
-            syncedUrl={getSyncedUrl(value)}
-            syncConfig={syncConfig}
-            onExpressionChange={(newValue, idx) => {
-              if (checkManualSyncTag(newValue)) return;
-              onExpressionChange(newValue, idx);
-            }}
-            onScoreChange={onScoreChange}
-            onEnabledChange={onEnabledChange}
-            items={values}
-            onItemsChange={onValuesChange}
-          />
-        ))}
-      </div>
-    </FilterInputContainer>
+    <SettingsCard title={title} description={description}>
+      {values.map((value, index) => {
+        const syncedUrl = getSyncedUrl(value);
+        return (
+          <div key={index} className="flex gap-2 items-end mt-2">
+            <div className="flex items-center pb-0.5">
+              <Checkbox
+                value={value.enabled ?? true}
+                defaultValue={true}
+                size="lg"
+                onValueChange={(v) => {
+                  if (onEnabledChange) {
+                    onEnabledChange(v === true, index);
+                  }
+                }}
+              />
+            </div>
+            <div className="flex-[3]">
+              {syncedUrl && syncConfig ? (
+                <PlaceholderSyncedUrls
+                  syncConfig={syncConfig}
+                  renderType="ranked"
+                  url={syncedUrl}
+                />
+              ) : (
+                <TextInput
+                  value={value.expression}
+                  label="Expression"
+                  placeholder="addon(type(streams, 'debrid'), 'TorBox')"
+                  disabled={value.enabled === false}
+                  onValueChange={(newValue) => {
+                    if (checkManualSyncTag(newValue)) return;
+                    onExpressionChange(newValue, index);
+                  }}
+                />
+              )}
+            </div>
+            {!syncedUrl && (
+              <div className="flex-1 min-w-[100px]">
+                <NumberInput
+                  value={value.score || 0}
+                  defaultValue={0}
+                  label="Score"
+                  disabled={value.enabled === false}
+                  onValueChange={(newValue) => onScoreChange(newValue || 0, index)}
+                  min={-1_000_000}
+                  max={1_000_000}
+                  step={50}
+                />
+              </div>
+            )}
+            <div className="pb-1 gap-1 flex items-end ml-auto">
+              <ItemActions
+                items={values}
+                index={index}
+                onItemsChange={onValuesChange}
+              />
+            </div>
+          </div>
+        );
+      })}
+      <ListFooter
+        onAdd={() =>
+          onValuesChange([
+            ...values,
+            { expression: '', score: 0, enabled: true },
+          ])
+        }
+        onImportClick={modal.open}
+        onExport={handleExport}
+      />
+      <ImportModal
+        open={modal.isOpen}
+        onOpenChange={modal.toggle}
+        onImport={handleImport}
+      />
+      {syncConfig && (
+        <SyncedUrlInputs
+          syncConfig={syncConfig}
+          renderType="ranked"
+          onUrlAdded={handleUrlAdded}
+          existingUrls={existingUrls}
+        />
+      )}
+    </SettingsCard>
   );
 }
 
@@ -1123,44 +871,38 @@ export function RankedRegexInputs({
   onScoreChange,
   syncConfig,
 }: RankedRegexInputProps) {
-  const getExpression = useCallback((v: { pattern: string }) => v.pattern, []);
-  const makePlaceholder = useCallback(
-    (url: string) => ({
-      pattern: makeSyncedTag(url),
-      name: url,
-      score: 0,
-    }),
-    []
-  );
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  const { valuesRef, handleUrlAdded, existingUrls, isSynced, getSyncedUrl } =
-    useSyncedUrlMigration({
-      syncConfig,
-      values,
-      onValuesChange,
-      getExpression,
-      makePlaceholder,
-    });
+  const { handleUrlAdded, existingUrls, getSyncedUrl } = useSyncedUrlMigration({
+    values,
+    onValuesChange,
+    getExpression: (v) => v.pattern,
+    makePlaceholder: (url) => ({ pattern: makeSyncedTag(url), name: url, score: 0 }),
+  });
 
-  const { modal, handleImport, handleExport } = useImportExport(
+  const getExportData = useCallback(
     () =>
       valuesRef.current.map((v) => ({
         pattern: v.pattern,
         name: v.name,
         score: v.score,
       })),
+    []
+  );
+  const handleImportData = useCallback(
     (data: any) => {
       if (
         Array.isArray(data) &&
         data.every(
-          (v: { pattern?: string; score?: number }) =>
+          (v: any) =>
             typeof v.pattern === 'string' && typeof v.score === 'number'
         )
       ) {
         onValuesChange(
-          data.map((v: { pattern: string; name?: string; score: number }) => ({
+          data.map((v: any) => ({
             pattern: v.pattern,
-            name: v.name || v.pattern,
+            name: v.name,
             score: v.score,
           }))
         );
@@ -1168,39 +910,101 @@ export function RankedRegexInputs({
       }
       return false;
     },
+    [onValuesChange]
+  );
+  const { modal, handleImport, handleExport } = useImportExport(
+    getExportData,
+    handleImportData,
     title
   );
 
   return (
-    <FilterInputContainer
-      title={title}
-      description={description}
-      onAdd={() => onValuesChange([...values, { pattern: '', name: '', score: 0 }])}
-      importExport={{ modal, handleImport, handleExport }}
-      sync={{ syncConfig, handleUrlAdded, existingUrls, renderType: 'ranked' }}
-    >
-      <div className="flex flex-col gap-3">
-        {values.map((value, index) => (
-          <RankedRegexItem
+    <SettingsCard title={title} description={description}>
+      {values.map((value, index) => {
+        const syncedUrl = getSyncedUrl(value);
+        return (
+          <div
             key={index}
-            value={value}
-            index={index}
-            syncedUrl={getSyncedUrl(value)}
-            syncConfig={syncConfig}
-            onPatternChange={(newValue, idx) => {
-              if (checkManualSyncTag(newValue)) return;
-              onPatternChange(newValue, idx);
-            }}
-            onNameChange={(newValue, idx) => {
-              if (checkManualSyncTag(newValue)) return;
-              onNameChange(newValue, idx);
-            }}
-            onScoreChange={onScoreChange}
-            items={values}
-            onItemsChange={onValuesChange}
-          />
-        ))}
-      </div>
-    </FilterInputContainer>
+            className="flex flex-col gap-2 p-3 border rounded-md border-[--border] mt-2"
+          >
+            {syncedUrl && syncConfig ? (
+              <PlaceholderSyncedUrls
+                syncConfig={syncConfig}
+                renderType="ranked"
+                url={syncedUrl}
+              />
+            ) : (
+              <div className="w-full">
+                <TextInput
+                  value={value.pattern}
+                  label="Pattern"
+                  placeholder="Regex Pattern"
+                  onValueChange={(newValue) => {
+                    if (checkManualSyncTag(newValue)) return;
+                    onPatternChange(newValue, index);
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex gap-2 items-end">
+              {!syncedUrl && (
+                <>
+                  <div className="flex-1">
+                    <TextInput
+                      value={value.name || ''}
+                      label="Name"
+                      placeholder="Name (Optional)"
+                      onValueChange={(newValue) => {
+                        if (checkManualSyncTag(newValue)) return;
+                        onNameChange(newValue, index);
+                      }}
+                    />
+                  </div>
+                  <div className="w-[20%] min-w-[100px]">
+                    <NumberInput
+                      value={value.score}
+                      label="Score"
+                      onValueChange={(newValue) =>
+                        onScoreChange(newValue ?? 0, index)
+                      }
+                      min={-1_000_000}
+                      max={1_000_000}
+                      step={50}
+                    />
+                  </div>
+                </>
+              )}
+              <div className="flex gap-1 pb-1 ml-auto">
+                <ItemActions
+                  items={values}
+                  index={index}
+                  onItemsChange={onValuesChange}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <ListFooter
+        onAdd={() =>
+          onValuesChange([...values, { pattern: '', name: '', score: 0 }])
+        }
+        onImportClick={modal.open}
+        onExport={handleExport}
+      />
+      <ImportModal
+        open={modal.isOpen}
+        onOpenChange={modal.toggle}
+        onImport={handleImport}
+      />
+      {syncConfig && (
+        <SyncedUrlInputs
+          syncConfig={syncConfig}
+          renderType="ranked"
+          onUrlAdded={handleUrlAdded}
+          existingUrls={existingUrls}
+        />
+      )}
+    </SettingsCard>
   );
 }
