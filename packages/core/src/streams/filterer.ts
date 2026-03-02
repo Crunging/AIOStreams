@@ -343,7 +343,16 @@ class StreamFilterer {
           let episodeCount = stream.parsedFile?.episodes?.length || 0;
           let finalSize = stream.size;
 
-          if (isFolderSize && type === 'series') {
+          if (!stream.folderSize && episodeCount > 5 && type === 'series') {
+            finalSize = stream.size / episodeCount;
+            logger.silly(
+              `Assuming episode pack for stream ${stream.filename} with ${episodeCount} episodes, dividing size by episode count for bitrate calculation`,
+              {
+                originalSize: formatBytes(stream.size, 1024),
+                adjustedSize: formatBytes(finalSize, 1024),
+              }
+            );
+          } else if (isFolderSize && type === 'series') {
             // For folder/season pack size, calculate per-episode size for bitrate calculation
             // Get total episodes across all seasons in the pack
             let totalEpisodes = 0;
@@ -383,14 +392,7 @@ class StreamFilterer {
           }
 
           if (doBitrateCalculation && runtimeToUse) {
-            // If it's a season pack, use average runtime
-            const seasonPackRuntime =
-              requestedMetadata?.runtime || runtimeToUse;
-            const runtime =
-              isFolderSize && type === 'series'
-                ? seasonPackRuntime
-                : runtimeToUse;
-            stream.bitrate = Math.round((finalSize * 8) / (runtime * 60));
+            stream.bitrate = Math.round((finalSize * 8) / (runtimeToUse * 60));
           }
         }
       });
