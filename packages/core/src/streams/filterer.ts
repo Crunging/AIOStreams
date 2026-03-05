@@ -287,7 +287,7 @@ class StreamFilterer {
       : undefined;
 
     const episodeRuntime = await context.getEpisodeRuntime();
-    const runtimeToUse =
+    const baseRuntime =
       episodeRuntime ||
       (requestedMetadata?.runtime ? requestedMetadata.runtime : undefined);
 
@@ -327,72 +327,53 @@ class StreamFilterer {
     // fill in bitrate from metadata runtime and size if missing and enabled
     if (this.userData.bitrate?.useMetadataRuntime !== false) {
       streams.forEach((stream) => {
-        const isFolderSize =
+        if (stream.bitrate !== undefined && Number.isFinite(stream.bitrate))
+          return;
+        if (!baseRuntime || !stream.size) return;
+
+        const isSeasonPack =
+          !stream.folderSize &&
+          stream.type !== 'debrid' &&
           stream.parsedFile?.seasons?.length &&
           stream.parsedFile.seasons.length > 0 &&
           (!stream.parsedFile.episodes ||
             stream.parsedFile.episodes.length === 0);
-        let doBitrateCalculation = true;
 
-        if (
-          (stream.bitrate === undefined || !Number.isFinite(stream.bitrate)) &&
-          runtimeToUse &&
-          stream.size &&
-          (!isFolderSize || type === 'series') // only calculate for folder sizes if it's a series
-        ) {
-          let episodeCount = stream.parsedFile?.episodes?.length || 0;
-          let finalSize = stream.size;
+        if (isSeasonPack && type !== 'series') return;
 
-          if (isFolderSize && type === 'series') {
-            // For folder/season pack size, calculate per-episode size for bitrate calculation
-            // Get total episodes across all seasons in the pack
-            let totalEpisodes = 0;
-            let hasUnknownSeasons = false;
+        let finalSize = stream.size;
+        let effectiveRuntime = baseRuntime;
 
-            for (const season of stream.parsedFile?.seasons || []) {
-              const seasonData = requestedMetadata?.seasons?.find(
-                (s) => s.season_number === season
-              );
+        if (isSeasonPack) {
+          // Estimate per-episode size from TMDB episode counts
+          let totalEpisodes = 0;
 
-              if (seasonData?.episode_count) {
-                totalEpisodes += seasonData.episode_count;
-              } else {
-                // If we can't find episode count for any season, we can't reliably calculate
-                hasUnknownSeasons = true;
-                break;
-              }
-            }
+          for (const season of stream.parsedFile?.seasons || []) {
+            const episodeCount = requestedMetadata?.seasons?.find(
+              (s) => s.season_number === season
+            )?.episode_count;
 
-            if (!hasUnknownSeasons && totalEpisodes > 0) {
+            if (!episodeCount) {
               logger.silly(
-                `Calculating bitrate for season pack ${stream.filename} using total of ${totalEpisodes} episodes`,
-                {
-                  seasons: stream.parsedFile?.seasons,
-                }
+                `Cannot calculate bitrate for season pack ${stream.filename}: unknown season data`,
+                { seasons: stream.parsedFile?.seasons }
               );
-              finalSize = finalSize / totalEpisodes;
-            } else {
-              doBitrateCalculation = false;
-              logger.silly(
-                `Cannot calculate bitrate for season pack ${stream.filename}: ${hasUnknownSeasons ? 'unknown season data' : 'no episodes found'}`,
-                {
-                  seasons: stream.parsedFile?.seasons,
-                }
-              );
+              return;
             }
+            totalEpisodes += episodeCount;
           }
 
-          if (doBitrateCalculation && runtimeToUse) {
-            // If it's a season pack, use average runtime
-            const seasonPackRuntime =
-              requestedMetadata?.runtime || runtimeToUse;
-            const runtime =
-              isFolderSize && type === 'series'
-                ? seasonPackRuntime
-                : runtimeToUse;
-            stream.bitrate = Math.round((finalSize * 8) / (runtime * 60));
-          }
+          logger.silly(
+            `Calculating bitrate for season pack ${stream.filename} using total of ${totalEpisodes} episodes`,
+            { seasons: stream.parsedFile?.seasons }
+          );
+          finalSize = finalSize / totalEpisodes;
+          effectiveRuntime = requestedMetadata?.runtime || baseRuntime;
         }
+
+        stream.bitrate = Math.round(
+          (finalSize * 8) / (effectiveRuntime * 60)
+        );
       });
     }
 
