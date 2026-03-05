@@ -3,6 +3,7 @@ import { RedisClientType } from 'redis';
 import { TransactionQueue } from '../db/queue.js';
 import { Cache, Env, REDIS_PREFIX } from './index.js';
 import { createLogger } from './logger.js';
+import { Time } from './time.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -25,6 +26,9 @@ export interface LockResult<T> {
 interface StoredResult<T> {
   value?: T;
   error?: string;
+  errorCode?: string;
+  errorType?: string;
+  errorStatusCode?: number;
 }
 
 export class DistributedLock {
@@ -116,7 +120,7 @@ export class DistributedLock {
     fn: () => Promise<T>,
     options: LockOptions
   ): Promise<LockResult<T>> {
-    const { timeout = 30000, ttl = 60000 } = options;
+    const { timeout = 30 * Time.Second, ttl = Time.Minute } = options;
     const owner = Math.random().toString(36).substring(2);
     const redisKey = `${lockPrefix}${key}`;
     const doneChannel = `${redisKey}:done`;
@@ -138,6 +142,10 @@ export class DistributedLock {
         await this.redis!.publish(doneChannel, JSON.stringify(storedResult));
       } catch (e: any) {
         const errorResult: StoredResult<T> = { error: e.message || 'Error' };
+        if (e.code !== undefined) errorResult.errorCode = String(e.code);
+        if (e.type !== undefined) errorResult.errorType = String(e.type);
+        if (e.statusCode !== undefined)
+          errorResult.errorStatusCode = Number(e.statusCode);
         await this.redis!.publish(doneChannel, JSON.stringify(errorResult));
         throw e;
       } finally {
@@ -167,7 +175,14 @@ export class DistributedLock {
           logger.warn(
             `Received error result for key: ${key} from lock holder.`
           );
-          reject(new Error(storedResult.error));
+          const err = new Error(storedResult.error);
+          if (storedResult.errorCode !== undefined)
+            (err as any).code = storedResult.errorCode;
+          if (storedResult.errorType !== undefined)
+            (err as any).type = storedResult.errorType;
+          if (storedResult.errorStatusCode !== undefined)
+            (err as any).statusCode = storedResult.errorStatusCode;
+          reject(err);
         } else {
           logger.debug(`Received cached result for key: ${key} via pub/sub.`);
           resolve({ result: storedResult.value!, cached: true });
@@ -210,7 +225,7 @@ export class DistributedLock {
     fn: () => Promise<T>,
     options: LockOptions
   ): Promise<LockResult<T>> {
-    const { timeout = 30000, ttl = 60000 } = options;
+    const { timeout = 30 * Time.Second, ttl = Time.Minute } = options;
     const owner = Math.random().toString(36).substring(2);
 
     // Clean up expired locks
@@ -322,7 +337,11 @@ export class DistributedLock {
     fn: () => Promise<T>,
     options: LockOptions
   ): Promise<LockResult<T>> {
-    const { timeout = 30000, ttl = 300000, lockDir } = options;
+    const {
+      timeout = 30 * Time.Second,
+      ttl = 5 * Time.Minute,
+      lockDir,
+    } = options;
 
     if (!lockDir) {
       throw new Error('lockDir is required for file-based locks');
@@ -446,7 +465,7 @@ export class DistributedLock {
     options: LockOptions
   ): Promise<LockResult<T>> {
     const db = DB.getInstance();
-    const { timeout = 30000, ttl = 60000 } = options;
+    const { timeout = 30 * Time.Second, ttl = Time.Minute } = options;
     const { retryInterval = db.isSQLite() ? 250 : 100 } = options;
     const owner = Math.random().toString(36).substring(2);
     const expiresAt = Date.now() + ttl;
@@ -515,9 +534,14 @@ export class DistributedLock {
         await TransactionQueue.getInstance().enqueue(async () => {
           const tx = await db.begin();
           try {
+            const errorEntry: StoredResult<T> = { error: e.message || 'Error' };
+            if (e.code !== undefined) errorEntry.errorCode = String(e.code);
+            if (e.type !== undefined) errorEntry.errorType = String(e.type);
+            if (e.statusCode !== undefined)
+              errorEntry.errorStatusCode = Number(e.statusCode);
             await tx.execute(
               `UPDATE distributed_locks SET result = ? WHERE key = ? AND owner = ?`,
-              [JSON.stringify({ error: e.message || 'Error' }), key, owner]
+              [JSON.stringify(errorEntry), key, owner]
             );
             await tx.commit();
           } catch (err) {
@@ -553,7 +577,14 @@ export class DistributedLock {
         const storedResult: StoredResult<T> = JSON.parse(lock[0].result);
         if (storedResult.error) {
           logger.warn(`Polled error result for key: ${key} from SQL lock.`);
-          throw new Error(storedResult.error);
+          const err = new Error(storedResult.error);
+          if (storedResult.errorCode !== undefined)
+            (err as any).code = storedResult.errorCode;
+          if (storedResult.errorType !== undefined)
+            (err as any).type = storedResult.errorType;
+          if (storedResult.errorStatusCode !== undefined)
+            (err as any).statusCode = storedResult.errorStatusCode;
+          throw err;
         }
         logger.debug(`Polled cached result for key: ${key} from SQL lock.`);
         return { result: storedResult.value!, cached: true };

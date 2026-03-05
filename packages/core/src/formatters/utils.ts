@@ -166,6 +166,35 @@ export function iso6391ToLanguage(code: string): string | undefined {
     .trim();
 }
 
+/**
+ * Convert an ISO 3166-1 country code (e.g. "US", "ES", "RU") to an ISO 639-1
+ * language code (e.g. "en", "es", "ru"). Returns undefined if no mapping found.
+ */
+export function iso31661ToIso6391(countryCode: string): string | undefined {
+  const entry =
+    FULL_LANGUAGE_MAPPING.find(
+      (lang) =>
+        lang.iso_3166_1?.toLowerCase() === countryCode.toLowerCase() &&
+        lang.flag_priority
+    ) ??
+    FULL_LANGUAGE_MAPPING.find(
+      (lang) => lang.iso_3166_1?.toLowerCase() === countryCode.toLowerCase()
+    );
+  return entry?.iso_639_1 || undefined;
+}
+
+/**
+ * Convert an ISO 639-2/3 language code (e.g. "eng", "spa", "jpn") to an
+ * ISO 639-1 language code (e.g. "en", "es", "ja"). Returns undefined if
+ * no mapping found.
+ */
+export function iso6392ToIso6391(code: string): string | undefined {
+  const entry = FULL_LANGUAGE_MAPPING.find(
+    (lang) => (lang as any).iso_639_2?.toLowerCase() === code.toLowerCase()
+  );
+  return entry?.iso_639_1 || undefined;
+}
+
 export function emojiToLanguage(emoji: string): string | undefined {
   return Object.entries(languageEmojiMap).find(
     ([_, value]) => value === emoji

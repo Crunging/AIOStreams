@@ -358,277 +358,280 @@ function Content() {
       <AnimatePresence mode="wait">
         {page === 'installed' && (
           <PageWrapper
-            {...{
-              initial: { opacity: 0, y: 60 },
-              animate: { opacity: 1, y: 0 },
-              exit: { opacity: 0, scale: 0.99 },
-              transition: {
-                duration: 0.35,
-              },
+            initial={{ opacity: 0, y: 60 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.99 }}
+            transition={{
+              duration: 0.35,
             }}
             key="installed"
             className="pt-0 space-y-8 relative z-[4]"
           >
-            <div>
-              <h2>Installed Addons</h2>
-              <p className="text-[--muted] text-sm">
-                Manage your installed addons.
-              </p>
-            </div>
-            <SettingsCard
-              title="My Addons"
-              description="Edit, remove, and reorder your installed addons. If you reorder your addons, you will have to refresh the catalogs if you have made any changes, and also reinstall the addon."
-            >
-              <DndContext
-                modifiers={[restrictToVerticalAxis]}
-                onDragEnd={handleDragEnd}
-                onDragStart={handleDragStart}
-                sensors={sensors}
+            <>
+              <div>
+                <h2>Installed Addons</h2>
+                <p className="text-[--muted] text-sm">
+                  Manage your installed addons.
+                </p>
+              </div>
+              <SettingsCard
+                title="My Addons"
+                description="Edit, remove, and reorder your installed addons. Reordering addons may require a reinstall - if it does, a pop-up will tell you."
               >
-                <SortableContext
-                  items={userData.presets.map((a) => a.instanceId)}
-                  strategy={verticalListSortingStrategy}
+                <DndContext
+                  modifiers={[restrictToVerticalAxis]}
+                  onDragEnd={handleDragEnd}
+                  onDragStart={handleDragStart}
+                  sensors={sensors}
                 >
-                  <div className="space-y-2">
-                    <ul className="space-y-2">
-                      {userData.presets.length === 0 ? (
-                        <li>
-                          <div className="flex flex-col items-center justify-center py-12">
-                            <span className="text-lg text-muted-foreground font-semibold text-center">
-                              Looks like you don't have any addons...
-                              <br />
-                              Add some from the marketplace!
-                            </span>
-                          </div>
-                        </li>
-                      ) : (
-                        userData.presets.map((preset) => {
-                          const presetMetadata = status?.settings?.presets.find(
-                            (p: any) => p.ID === preset.type
-                          );
-                          return (
-                            <SortableAddonItem
-                              key={getPresetUniqueKey(preset)}
-                              preset={preset}
-                              presetMetadata={presetMetadata}
-                              onEdit={() => {
-                                setModalPreset(presetMetadata);
-                                setModalInitialValues({
-                                  options: { ...preset.options },
-                                });
-                                setModalMode('edit');
-                                setEditingAddonId(preset.instanceId);
-                                setModalOpen(true);
-                              }}
-                              onRemove={() => {
-                                setUserData((prev) => {
-                                  if (!prev) return prev;
-                                  const cloned = structuredClone(prev);
-                                  cloned.presets = cloned.presets.filter(
-                                    (a) => a.instanceId !== preset.instanceId
-                                  );
-                                  return removeInvalidPresetReferences(cloned);
-                                });
-                              }}
-                              onToggleEnabled={(v: boolean) => {
-                                setUserData((prev) => ({
-                                  ...prev,
-                                  presets: prev.presets.map((p) =>
-                                    p.instanceId === preset.instanceId
-                                      ? { ...p, enabled: v }
-                                      : p
-                                  ),
-                                }));
-                              }}
-                            />
-                          );
-                        })
-                      )}
-                    </ul>
-                  </div>
-                </SortableContext>
-              </DndContext>
-            </SettingsCard>
+                  <SortableContext
+                    items={userData.presets.map((a) => a.instanceId)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2">
+                      <ul className="space-y-2">
+                        {userData.presets.length === 0 ? (
+                          <li>
+                            <div className="flex flex-col items-center justify-center py-12">
+                              <span className="text-lg text-muted-foreground font-semibold text-center">
+                                Looks like you don't have any addons...
+                                <br />
+                                Add some from the marketplace!
+                              </span>
+                            </div>
+                          </li>
+                        ) : (
+                          userData.presets.map((preset) => {
+                            const presetMetadata =
+                              status?.settings?.presets.find(
+                                (p: any) => p.ID === preset.type
+                              );
+                            return (
+                              <SortableAddonItem
+                                key={preset.instanceId}
+                                preset={preset}
+                                presetMetadata={presetMetadata}
+                                onEdit={() => {
+                                  setModalPreset(presetMetadata);
+                                  setModalInitialValues({
+                                    options: { ...preset.options },
+                                  });
+                                  setModalMode('edit');
+                                  setEditingAddonId(preset.instanceId);
+                                  setModalOpen(true);
+                                }}
+                                onRemove={() => {
+                                  setUserData((prev) => {
+                                    if (!prev) return prev;
+                                    const cloned = structuredClone(prev);
+                                    cloned.presets = cloned.presets.filter(
+                                      (a) => a.instanceId !== preset.instanceId
+                                    );
+                                    return removeInvalidPresetReferences(
+                                      cloned
+                                    );
+                                  });
+                                }}
+                                onToggleEnabled={(v: boolean) => {
+                                  setUserData((prev) => ({
+                                    ...prev,
+                                    presets: prev.presets.map((p) =>
+                                      p.instanceId === preset.instanceId
+                                        ? { ...p, enabled: v }
+                                        : p
+                                    ),
+                                  }));
+                                }}
+                              />
+                            );
+                          })
+                        )}
+                      </ul>
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </SettingsCard>
 
-            {userData.presets.length > 0 && <CatalogSettingsCard />}
+              {userData.presets.length > 0 && <CatalogSettingsCard />}
 
-            {userData.presets.length > 0 && <MergedCatalogsCard />}
+              {userData.presets.length > 0 && <MergedCatalogsCard />}
 
-            {userData.presets.length > 0 && mode === 'pro' && (
-              <AddonFetchingBehaviorCard />
-            )}
+              {userData.presets.length > 0 && mode === 'pro' && (
+                <AddonFetchingBehaviorCard />
+              )}
+            </>
           </PageWrapper>
         )}
 
         {page === 'marketplace' && (
           <PageWrapper
-            {...{
-              initial: { opacity: 0, y: 60 },
-              animate: { opacity: 1, y: 0 },
-              exit: { opacity: 0, scale: 0.99 },
-              transition: {
-                duration: 0.35,
-              },
+            initial={{ opacity: 0, y: 60 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.99 }}
+            transition={{
+              duration: 0.35,
             }}
             key="marketplace"
             className="pt-0 space-y-6 relative z-[4]"
           >
-            <div>
-              <h2>Marketplace</h2>
-              <p className="text-[--muted] text-sm">
-                Browse and install addons from the marketplace.
-              </p>
-            </div>
+            <>
+              <div>
+                <h2>Marketplace</h2>
+                <p className="text-[--muted] text-sm">
+                  Browse and install addons from the marketplace.
+                </p>
+              </div>
 
-            {/* Category tabs */}
-            <StaticTabs
-              className="h-10 w-fit max-w-full border rounded-full"
-              triggerClass="px-4 py-1 text-sm"
-              items={[
-                {
-                  name: 'All',
-                  isCurrent: categoryFilter === 'all',
-                  onClick: () => setCategoryFilter('all'),
-                },
-                {
-                  name: 'Streams',
-                  isCurrent:
-                    categoryFilter === constants.PresetCategory.STREAMS,
-                  onClick: () =>
-                    setCategoryFilter(constants.PresetCategory.STREAMS),
-                },
-                {
-                  name: 'Subtitles',
-                  isCurrent:
-                    categoryFilter === constants.PresetCategory.SUBTITLES,
-                  onClick: () =>
-                    setCategoryFilter(constants.PresetCategory.SUBTITLES),
-                },
-                {
-                  name: 'Metadata & Catalogs',
-                  isCurrent:
-                    categoryFilter === constants.PresetCategory.META_CATALOGS,
-                  onClick: () =>
-                    setCategoryFilter(constants.PresetCategory.META_CATALOGS),
-                },
-                {
-                  name: 'Miscellaneous',
-                  isCurrent: categoryFilter === constants.PresetCategory.MISC,
-                  onClick: () =>
-                    setCategoryFilter(constants.PresetCategory.MISC),
-                },
-              ]}
-            />
+              {/* Category tabs */}
+              <StaticTabs
+                className="h-10 w-fit max-w-full border rounded-full"
+                triggerClass="px-4 py-1 text-sm"
+                items={[
+                  {
+                    name: 'All',
+                    isCurrent: categoryFilter === 'all',
+                    onClick: () => setCategoryFilter('all'),
+                  },
+                  {
+                    name: 'Streams',
+                    isCurrent:
+                      categoryFilter === constants.PresetCategory.STREAMS,
+                    onClick: () =>
+                      setCategoryFilter(constants.PresetCategory.STREAMS),
+                  },
+                  {
+                    name: 'Subtitles',
+                    isCurrent:
+                      categoryFilter === constants.PresetCategory.SUBTITLES,
+                    onClick: () =>
+                      setCategoryFilter(constants.PresetCategory.SUBTITLES),
+                  },
+                  {
+                    name: 'Metadata & Catalogs',
+                    isCurrent:
+                      categoryFilter === constants.PresetCategory.META_CATALOGS,
+                    onClick: () =>
+                      setCategoryFilter(constants.PresetCategory.META_CATALOGS),
+                  },
+                  {
+                    name: 'Miscellaneous',
+                    isCurrent: categoryFilter === constants.PresetCategory.MISC,
+                    onClick: () =>
+                      setCategoryFilter(constants.PresetCategory.MISC),
+                  },
+                ]}
+              />
 
-            {/* Filters and search row */}
-            <div className="flex flex-col lg:flex-row gap-2">
-              <div className="flex gap-2 flex-1 lg:flex-none">
-                <Select
-                  value={serviceFilter}
-                  onValueChange={setServiceFilter}
-                  options={[
-                    { label: 'All Services', value: 'all' },
-                    ...serviceOptions,
-                  ]}
-                  fieldClass="lg:w-[200px]"
-                />
-                <Select
-                  value={streamTypeFilter}
-                  onValueChange={setStreamTypeFilter}
-                  options={[
-                    { label: 'All Types', value: 'all' },
-                    ...streamTypeOptions,
-                  ]}
-                  fieldClass="lg:w-[200px]"
+              {/* Filters and search row */}
+              <div className="flex flex-col lg:flex-row gap-2">
+                <div className="flex gap-2 flex-1 lg:flex-none">
+                  <Select
+                    value={serviceFilter}
+                    onValueChange={setServiceFilter}
+                    options={[
+                      { label: 'All Services', value: 'all' },
+                      ...serviceOptions,
+                    ]}
+                    fieldClass="lg:w-[200px]"
+                  />
+                  <Select
+                    value={streamTypeFilter}
+                    onValueChange={setStreamTypeFilter}
+                    options={[
+                      { label: 'All Types', value: 'all' },
+                      ...streamTypeOptions,
+                    ]}
+                    fieldClass="lg:w-[200px]"
+                  />
+                </div>
+                <TextInput
+                  value={search}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setSearch(e.target.value)
+                  }
+                  placeholder="Search addons..."
+                  className="flex-1"
+                  leftIcon={<SearchIcon className="w-4 h-4" />}
                 />
               </div>
-              <TextInput
-                value={search}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setSearch(e.target.value)
-                }
-                placeholder="Search addons..."
-                className="flex-1"
-                leftIcon={<SearchIcon className="w-4 h-4" />}
-              />
-            </div>
 
-            {/* Addon cards by category */}
-            {filteredPresets.length === 0 && (
-              <Card className="p-8 text-center">
-                <p className="text-[--muted]">
-                  No addons found matching your criteria.
-                </p>
-              </Card>
-            )}
+              {/* Addon cards by category */}
+              {filteredPresets.length === 0 && (
+                <Card className="p-8 text-center">
+                  <p className="text-[--muted]">
+                    No addons found matching your criteria.
+                  </p>
+                </Card>
+              )}
 
-            {!!streamPresets?.length && (
-              <Card className="p-4 space-y-6">
-                <h3 className="flex gap-3 items-center">
-                  <RiFolderDownloadFill /> Streams
-                </h3>
-                <div className={addonGridClassName}>
-                  {streamPresets.map((preset: any) => (
-                    <AddonCard
-                      key={preset.ID}
-                      preset={preset}
-                      onAdd={() => handleAddPreset(preset)}
-                    />
-                  ))}
-                </div>
-              </Card>
-            )}
+              {!!streamPresets?.length && (
+                <Card className="p-4 space-y-6">
+                  <h3 className="flex gap-3 items-center">
+                    <RiFolderDownloadFill /> Streams
+                  </h3>
+                  <div className={addonGridClassName}>
+                    {streamPresets.map((preset: any) => (
+                      <AddonCard
+                        key={preset.ID}
+                        preset={preset}
+                        onAdd={() => handleAddPreset(preset)}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
 
-            {!!subtitlePresets?.length && (
-              <Card className="p-4 space-y-6">
-                <h3 className="flex gap-3 items-center">
-                  <MdSubtitles /> Subtitles
-                </h3>
-                <div className={addonGridClassName}>
-                  {subtitlePresets.map((preset: any) => (
-                    <AddonCard
-                      key={preset.ID}
-                      preset={preset}
-                      onAdd={() => handleAddPreset(preset)}
-                    />
-                  ))}
-                </div>
-              </Card>
-            )}
+              {!!subtitlePresets?.length && (
+                <Card className="p-4 space-y-6">
+                  <h3 className="flex gap-3 items-center">
+                    <MdSubtitles /> Subtitles
+                  </h3>
+                  <div className={addonGridClassName}>
+                    {subtitlePresets.map((preset: any) => (
+                      <AddonCard
+                        key={preset.ID}
+                        preset={preset}
+                        onAdd={() => handleAddPreset(preset)}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
 
-            {!!metaCatalogPresets?.length && (
-              <Card className="p-4 space-y-6">
-                <h3 className="flex gap-3 items-center">
-                  <MdOutlineDataset /> Metadata & Catalogs
-                </h3>
-                <div className={addonGridClassName}>
-                  {metaCatalogPresets.map((preset: any) => (
-                    <AddonCard
-                      key={preset.ID}
-                      preset={preset}
-                      onAdd={() => handleAddPreset(preset)}
-                    />
-                  ))}
-                </div>
-              </Card>
-            )}
+              {!!metaCatalogPresets?.length && (
+                <Card className="p-4 space-y-6">
+                  <h3 className="flex gap-3 items-center">
+                    <MdOutlineDataset /> Metadata & Catalogs
+                  </h3>
+                  <div className={addonGridClassName}>
+                    {metaCatalogPresets.map((preset: any) => (
+                      <AddonCard
+                        key={preset.ID}
+                        preset={preset}
+                        onAdd={() => handleAddPreset(preset)}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
 
-            {!!miscPresets?.length && (
-              <Card className="p-4 space-y-6">
-                <h3 className="flex gap-3 items-center">
-                  <LuSettings /> Miscellaneous
-                </h3>
-                <div className={addonGridClassName}>
-                  {miscPresets.map((preset: any) => (
-                    <AddonCard
-                      key={preset.ID}
-                      preset={preset}
-                      onAdd={() => handleAddPreset(preset)}
-                    />
-                  ))}
-                </div>
-              </Card>
-            )}
+              {!!miscPresets?.length && (
+                <Card className="p-4 space-y-6">
+                  <h3 className="flex gap-3 items-center">
+                    <LuSettings /> Miscellaneous
+                  </h3>
+                  <div className={addonGridClassName}>
+                    {miscPresets.map((preset: any) => (
+                      <AddonCard
+                        key={preset.ID}
+                        preset={preset}
+                        onAdd={() => handleAddPreset(preset)}
+                      />
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </>
           </PageWrapper>
         )}
       </AnimatePresence>
@@ -1154,6 +1157,7 @@ function AddonModal({
   if (configMode === 'noob') {
     dynamicOptions = dynamicOptions.filter((opt: any) => {
       if (opt?.showInSimpleMode === false) return false;
+      if (opt?.advanced === true) return false;
       return true;
     });
   }
@@ -1608,7 +1612,9 @@ function CatalogSettingsCard() {
               enabled: true,
               shuffle: false,
               usePosterService: !!(
-                userData.rpdbApiKey || userData.topPosterApiKey
+                userData.rpdbApiKey ||
+                userData.topPosterApiKey ||
+                userData.aioratingsApiKey
               ),
               hideable: catalog.hideable,
               searchable: catalog.searchable,
@@ -1760,7 +1766,7 @@ function CatalogSettingsCard() {
   return (
     <SettingsCard
       title="Catalogs"
-      description="Rename, Reorder, and toggle your catalogs, and apply modifications like RPDB posters and shuffling. If you reorder the addons, you need to reinstall the addon"
+      description="Rename, reorder, and toggle your catalogs, and apply modifications like RPDB posters and shuffling. Adjusting catalogs may require a reinstall - if it does, a pop-up will tell you."
       action={
         <IconButton
           size="sm"

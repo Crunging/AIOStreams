@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  stremthru:
+    hash: 5d59636029f2455cfc103c8b8206ce24ff67c7f7f77e6fb8ea3f65dca52105dd
+    path: patches/stremthru.patch
+
 importers:
 
   .:
@@ -31,10 +36,10 @@ importers:
     dependencies:
       '@torbox/torbox-api':
         specifier: github:viren070/torbox-sdk-js#dist
-        version: https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/3cbd6c42d50d26b18e2184f16e5506630a2f53e7
+        version: https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/82fb4eb14ccd3a0372fb445f796fa49527960cdd
       '@viren070/parse-torrent-title':
-        specifier: ^0.6.4
-        version: 0.6.4
+        specifier: ^0.7.0
+        version: 0.7.0
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -79,7 +84,7 @@ importers:
         version: 5.1.7
       stremthru:
         specifier: ^0.11.0
-        version: 0.11.0
+        version: 0.11.0(patch_hash=5d59636029f2455cfc103c8b8206ce24ff67c7f7f77e6fb8ea3f65dca52105dd)
       super-regex:
         specifier: ^1.1.0
         version: 1.1.0
@@ -1829,8 +1834,8 @@ packages:
     resolution: {integrity: sha512-RbzJvlNzmRq5c3O09UipeuXno4tA1FE6ikOjxZK0tuxVv3412l64l5t1W5pj4+rJq9vpkm/kwiR07aZXnsKPxw==}
     engines: {node: '>= 6'}
 
-  '@torbox/torbox-api@https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/3cbd6c42d50d26b18e2184f16e5506630a2f53e7':
-    resolution: {tarball: https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/3cbd6c42d50d26b18e2184f16e5506630a2f53e7}
+  '@torbox/torbox-api@https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/82fb4eb14ccd3a0372fb445f796fa49527960cdd':
+    resolution: {tarball: https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/82fb4eb14ccd3a0372fb445f796fa49527960cdd}
     version: 1.0.9
 
   '@tsconfig/node10@1.0.12':
@@ -2106,8 +2111,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@viren070/parse-torrent-title@0.6.4':
-    resolution: {integrity: sha512-lFXX5yXiupr9de1nROeBSzaE7I29OOjWagKK6cRJ2vJSxYFoivAWsbyzV21EEijQRDTkkpeLxqeQxchQ1IVhrw==}
+  '@viren070/parse-torrent-title@0.7.0':
+    resolution: {integrity: sha512-PVws4tvEXjFYcV5ISQeSb/oKYC8165iJr1R8edCxKefbI/kOv87s1GbPJY0O+aAkRc27sLOyh4jr89BST6Q2Rg==}
 
   '@vitest/expect@2.1.9':
     resolution: {integrity: sha512-UJCIkTBenHeKT1TTlKMJWy1laZewsRIzYighyYiJKZreqtdxSos/S1t+ktRMQWu2CKqaarrkeszJx1cgC5tGZw==}
@@ -6409,7 +6414,7 @@ snapshots:
   '@tootallnate/once@1.1.2':
     optional: true
 
-  '@torbox/torbox-api@https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/3cbd6c42d50d26b18e2184f16e5506630a2f53e7':
+  '@torbox/torbox-api@https://codeload.github.com/viren070/torbox-sdk-js/tar.gz/82fb4eb14ccd3a0372fb445f796fa49527960cdd':
     dependencies:
       zod: 3.22.0
 
@@ -6699,7 +6704,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@viren070/parse-torrent-title@0.6.4': {}
+  '@viren070/parse-torrent-title@0.7.0': {}
 
   '@vitest/expect@2.1.9':
     dependencies:
@@ -9689,7 +9694,7 @@ snapshots:
       es-errors: 1.3.0
       internal-slot: 1.1.0
 
-  stremthru@0.11.0: {}
+  stremthru@0.11.0(patch_hash=5d59636029f2455cfc103c8b8206ce24ff67c7f7f77e6fb8ea3f65dca52105dd): {}
 
   string-width@4.2.3:
     dependencies:

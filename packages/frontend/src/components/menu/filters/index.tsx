@@ -41,6 +41,8 @@ import {
   LANGUAGES,
   TYPES,
   DEDUPLICATOR_KEYS,
+  SMART_DETECT_ATTRIBUTES,
+  DEFAULT_SMART_DETECT_ATTRIBUTES,
   AUDIO_CHANNELS,
   MIN_SIZE,
   MAX_SIZE,
@@ -67,6 +69,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { FilterSettings } from './_components/filter-settings';
 import {
   TextInputs,
+  ToggleableTextInputs,
   TwoTextInputs,
   RankedExpressionInputs,
   RankedRegexInputs,
@@ -114,17 +117,26 @@ export function FiltersMenu() {
 function Content() {
   const [tab, setTab] = useState('cache');
   const { status } = useStatus();
-  const previousTab = useRef(tab);
+  const { mode } = useMode();
   const { userData, setUserData } = useUserData();
   const allowedRegexModal = useDisclosure(false);
   const allowedRegexUrlsModal = useDisclosure(false);
   const whitelistedSelUrlsModal = useDisclosure(false);
-  const { mode } = useMode();
+  // check query params for a specific filter tab to open
   useEffect(() => {
-    if (tab !== previousTab.current) {
-      previousTab.current = tab;
+    const params = new URLSearchParams(window.location.search);
+    const filter = params.get('filter');
+    if (filter) {
+      setTab(filter);
     }
-  }, [tab]);
+  }, []);
+  const handleTabChange = (value: string) => {
+    setTab(value);
+    const params = new URLSearchParams(window.location.search);
+    params.set('filter', value);
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+  };
 
   const getSyncedProps = (
     key:
@@ -194,7 +206,7 @@ function Content() {
     <>
       <Tabs
         value={tab}
-        onValueChange={setTab}
+        onValueChange={handleTabChange}
         className={tabsRootClass}
         triggerClass={tabsTriggerClass}
         listClass={tabsListClass}
@@ -300,8 +312,9 @@ function Content() {
                   Stream Expression
                 </TabsTrigger>
               )}
-              {(status?.settings.regexFilterAccess !== 'none' ||
-                status?.settings.allowedRegexPatterns) &&
+              {(status?.settings.regexAccess.level !== 'none' ||
+                (status?.settings.regexAccess.patterns?.length ?? 0) > 0 ||
+                (status?.settings.regexAccess.urls?.length ?? 0) > 0) &&
                 mode === 'pro' && (
                   <TabsTrigger value="regex">
                     <BsRegex className="text-lg mr-3" />
@@ -1640,6 +1653,23 @@ function Content() {
                       }));
                     }}
                   />
+                  <Switch
+                    label="Use Initial Air Date"
+                    side="right"
+                    help="For series/anime, compare against only the initial air year instead of the full year range."
+                    moreHelp="Helps filter out same-title-different-show results (e.g. 'One Piece 2023' live-action vs 'One Piece 1999' anime). May also filter torrents that include a season air year in their name."
+                    disabled={!userData.yearMatching?.enabled}
+                    value={userData.yearMatching?.useInitialAirDate ?? false}
+                    onValueChange={(value) => {
+                      setUserData((prev) => ({
+                        ...prev,
+                        yearMatching: {
+                          ...prev.yearMatching,
+                          useInitialAirDate: value,
+                        },
+                      }));
+                    }}
+                  />
                   <NumberInput
                     label="Year Tolerance"
                     disabled={!userData.yearMatching?.enabled}
@@ -1811,7 +1841,7 @@ function Content() {
                 </p>
               </div>
               <div className="mb-4 space-y-4">
-                {status?.settings.selSyncAccess === 'trusted' &&
+                {status?.settings.selSyncAccess.level === 'trusted' &&
                   (userData.trusted ? (
                     <Alert
                       intent="success"
@@ -1822,8 +1852,9 @@ function Content() {
                             You are a trusted user. You can sync expressions
                             from any URL.
                           </p>
-                          {status?.settings.whitelistedSelUrls &&
-                            status.settings.whitelistedSelUrls.length > 0 && (
+                          {status?.settings.selSyncAccess.trustedUrls &&
+                            status.settings.selSyncAccess.trustedUrls.length >
+                              0 && (
                               <div className="flex flex-row flex-wrap gap-2">
                                 <Button
                                   intent="primary-outline"
@@ -1851,8 +1882,9 @@ function Content() {
                             <code className="font-mono">TRUSTED_UUIDS</code>{' '}
                             environment variable.
                           </p>
-                          {status?.settings.whitelistedSelUrls &&
-                            status.settings.whitelistedSelUrls.length > 0 && (
+                          {status?.settings.selSyncAccess.trustedUrls &&
+                            status.settings.selSyncAccess.trustedUrls.length >
+                              0 && (
                               <div className="flex flex-row flex-wrap gap-2">
                                 <Button
                                   intent="primary-outline"
@@ -1927,10 +1959,9 @@ function Content() {
                     </p>
                   </div>
                 </SettingsCard>
-                <TextInputs
-                  label="Required Stream Expressions"
-                  itemName="Expression"
-                  help="The expressions to apply to the streams. Streams selected by any of these expressions will be required to be in the results."
+                <ToggleableTextInputs
+                  title="Required Stream Expressions"
+                  description="The expressions to apply to the streams. Streams selected by any of these expressions will be required to be in the results."
                   placeholder="addon(type(streams, 'debrid'), 'TorBox')"
                   values={userData.requiredStreamExpressions || []}
                   onValuesChange={(values) => {
@@ -1939,12 +1970,47 @@ function Content() {
                       requiredStreamExpressions: values,
                     }));
                   }}
+                  onExpressionChange={(expression, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      requiredStreamExpressions: [
+                        ...(prev.requiredStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.requiredStreamExpressions || [])[index],
+                          expression,
+                        },
+                        ...(prev.requiredStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
+                  onEnabledChange={(enabled, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      requiredStreamExpressions: [
+                        ...(prev.requiredStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.requiredStreamExpressions || [])[index],
+                          enabled,
+                        },
+                        ...(prev.requiredStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
                   {...getSyncedProps('syncedRequiredStreamExpressionUrls')}
                 />
-                <TextInputs
-                  label="Excluded Stream Expressions"
-                  itemName="Expression"
-                  help="The expressions to apply to the streams. Streams selected by any of these expressions will be excluded from the results."
+                <ToggleableTextInputs
+                  title="Excluded Stream Expressions"
+                  description="The expressions to apply to the streams. Streams selected by any of these expressions will be excluded from the results."
                   placeholder="addon(type(streams, 'debrid'), 'TorBox')"
                   values={userData.excludedStreamExpressions || []}
                   onValuesChange={(values) => {
@@ -1953,12 +2019,47 @@ function Content() {
                       excludedStreamExpressions: values,
                     }));
                   }}
+                  onExpressionChange={(expression, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      excludedStreamExpressions: [
+                        ...(prev.excludedStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.excludedStreamExpressions || [])[index],
+                          expression,
+                        },
+                        ...(prev.excludedStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
+                  onEnabledChange={(enabled, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      excludedStreamExpressions: [
+                        ...(prev.excludedStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.excludedStreamExpressions || [])[index],
+                          enabled,
+                        },
+                        ...(prev.excludedStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
                   {...getSyncedProps('syncedExcludedStreamExpressionUrls')}
                 />
-                <TextInputs
-                  label="Included Stream Expressions"
-                  itemName="Expression"
-                  help="The expressions to apply to the streams. Streams selected by any of these expressions will be included in the results."
+                <ToggleableTextInputs
+                  title="Included Stream Expressions"
+                  description="The expressions to apply to the streams. Streams selected by any of these expressions will be included in the results."
                   placeholder="addon(type(streams, 'debrid'), 'TorBox')"
                   values={userData.includedStreamExpressions || []}
                   onValuesChange={(values) => {
@@ -1967,18 +2068,89 @@ function Content() {
                       includedStreamExpressions: values,
                     }));
                   }}
+                  onExpressionChange={(expression, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      includedStreamExpressions: [
+                        ...(prev.includedStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.includedStreamExpressions || [])[index],
+                          expression,
+                        },
+                        ...(prev.includedStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
+                  onEnabledChange={(enabled, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      includedStreamExpressions: [
+                        ...(prev.includedStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.includedStreamExpressions || [])[index],
+                          enabled,
+                        },
+                        ...(prev.includedStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
                   {...getSyncedProps('syncedIncludedStreamExpressionUrls')}
                 />
-                <TextInputs
-                  label="Preferred Stream Expressions"
-                  itemName="Expression"
-                  help="The expressions to apply to the streams. Streams selected by these expressions will be preferred over other streams and ranked by the order they are in this list."
+                <ToggleableTextInputs
+                  title="Preferred Stream Expressions"
+                  description="The expressions to apply to the streams. Streams selected by these expressions will be preferred over other streams and ranked by the order they are in this list."
                   placeholder="addon(type(streams, 'debrid'), 'TorBox')"
                   values={userData.preferredStreamExpressions || []}
                   onValuesChange={(values) => {
                     setUserData((prev) => ({
                       ...prev,
                       preferredStreamExpressions: values,
+                    }));
+                  }}
+                  onExpressionChange={(expression, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      preferredStreamExpressions: [
+                        ...(prev.preferredStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.preferredStreamExpressions || [])[index],
+                          expression,
+                        },
+                        ...(prev.preferredStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
+                    }));
+                  }}
+                  onEnabledChange={(enabled, index) => {
+                    setUserData((prev) => ({
+                      ...prev,
+                      preferredStreamExpressions: [
+                        ...(prev.preferredStreamExpressions || []).slice(
+                          0,
+                          index
+                        ),
+                        {
+                          ...(prev.preferredStreamExpressions || [])[index],
+                          enabled,
+                        },
+                        ...(prev.preferredStreamExpressions || []).slice(
+                          index + 1
+                        ),
+                      ],
                     }));
                   }}
                   {...getSyncedProps('syncedPreferredStreamExpressionUrls')}
@@ -2180,7 +2352,7 @@ function Content() {
                 </p>
               </div>
               <div className="mb-4 space-y-4">
-                {status?.settings.regexFilterAccess === 'trusted' &&
+                {status?.settings.regexAccess.level === 'trusted' &&
                   (userData.trusted ? (
                     <Alert
                       intent="success"
@@ -2209,7 +2381,8 @@ function Content() {
                       }
                     />
                   ))}
-                {status?.settings.allowedRegexPatterns?.patterns.length && (
+                {(status?.settings.regexAccess.patterns?.length ||
+                  status?.settings.regexAccess.urls?.length) && (
                   <Alert
                     intent="info"
                     title="Allowed Regex Patterns"
@@ -2220,20 +2393,17 @@ function Content() {
                             This instance has allowed a specific set of regexes
                             to be used by all users.
                           </p>
-                          {status?.settings.allowedRegexPatterns
-                            .description && (
+                          {status?.settings.regexAccess.description && (
                             <div className="mt-2 break-words overflow-hidden">
                               <MarkdownLite>
-                                {status?.settings.allowedRegexPatterns
-                                  .description || ''}
+                                {status?.settings.regexAccess.description || ''}
                               </MarkdownLite>
                             </div>
                           )}
                         </div>
                         <div className="flex flex-row flex-wrap gap-2">
-                          {status?.settings.allowedRegexPatterns?.urls &&
-                            status.settings.allowedRegexPatterns.urls.length >
-                              0 && (
+                          {status?.settings.regexAccess.urls &&
+                            status.settings.regexAccess.urls.length > 0 && (
                               <Button
                                 intent="primary-outline"
                                 size="sm"
@@ -2735,6 +2905,24 @@ function Content() {
               <HeadingWithPageControls heading="Result Limits" />
               <SettingsCard description="Apply limits to specific kinds of results">
                 <div className="space-y-4">
+                  <Select
+                    label="Limit Mode"
+                    help="Independent: each category limit is checked separately. Conjunctive: category limits are combined into a composite key (e.g. 3 per resolution per addon)."
+                    value={userData.resultLimits?.mode ?? 'independent'}
+                    onValueChange={(value) => {
+                      setUserData((prev) => ({
+                        ...prev,
+                        resultLimits: {
+                          ...prev.resultLimits,
+                          mode: value as 'independent' | 'conjunctive',
+                        },
+                      }));
+                    }}
+                    options={[
+                      { label: 'Independent', value: 'independent' },
+                      { label: 'Conjunctive', value: 'conjunctive' },
+                    ]}
+                  />
                   <NumberInput
                     help="Global limit for all results"
                     label="Global Limit"
@@ -3023,6 +3211,66 @@ function Content() {
                           value: key,
                         }))}
                       />
+                      {(
+                        userData.deduplicator?.keys ?? ['filename', 'infoHash']
+                      ).includes('smartDetect') && (
+                        <>
+                          <Combobox
+                            disabled={!userData.deduplicator?.enabled}
+                            label="Smart Detect Attributes"
+                            multiple
+                            help="Choose which file attributes are used to identify duplicates when Smart Detect is enabled. Numeric attributes (size, bitrate) use a configurable percentage tolerance."
+                            value={
+                              userData.deduplicator?.smartDetectAttributes ??
+                              DEFAULT_SMART_DETECT_ATTRIBUTES
+                            }
+                            emptyMessage="No attributes available"
+                            onValueChange={(value) => {
+                              setUserData((prev) => ({
+                                ...prev,
+                                deduplicator: {
+                                  ...prev.deduplicator,
+                                  smartDetectAttributes:
+                                    value as (typeof SMART_DETECT_ATTRIBUTES)[number][],
+                                },
+                              }));
+                            }}
+                            options={SMART_DETECT_ATTRIBUTES.map((attr) => ({
+                              label: attr,
+                              value: attr,
+                            }))}
+                          />
+                          {(['size', 'bitrate'] as const).some((a) =>
+                            (
+                              userData.deduplicator?.smartDetectAttributes ??
+                              DEFAULT_SMART_DETECT_ATTRIBUTES
+                            ).includes(a)
+                          ) && (
+                            <NumberInput
+                              disabled={!userData.deduplicator?.enabled}
+                              label="Numeric Rounding (%)"
+                              help="Numeric attributes (size, bitrate) are bucketed using geometric rounding at this tolerance. Two values within roughly this percentage of each other are treated as equal. Higher = more lenient; lower = stricter."
+                              min={1}
+                              max={50}
+                              step={1}
+                              value={
+                                userData.deduplicator?.smartDetectRounding ?? 10
+                              }
+                              onValueChange={(value) => {
+                                if (value !== undefined) {
+                                  setUserData((prev) => ({
+                                    ...prev,
+                                    deduplicator: {
+                                      ...prev.deduplicator,
+                                      smartDetectRounding: value,
+                                    },
+                                  }));
+                                }
+                              }}
+                            />
+                          )}
+                        </>
+                      )}
                       <Combobox
                         help="Addons selected here will always have their results kept during deduplication."
                         label="Addon Exclusions"
@@ -3072,6 +3320,31 @@ function Content() {
                           { label: 'Conservative', value: 'conservative' },
                           { label: 'Aggressive', value: 'aggressive' },
                           { label: 'Keep All', value: 'keep_all' },
+                        ]}
+                      />
+                      <Select
+                        label="Library Stream Behaviour"
+                        help="How to treat library streams when duplicates are found. 'Ignore': library streams have no special priority — normal service/addon order decides. 'Prefer': a library stream always beats a non-library stream head-to-head, even if the non-library stream is from a higher-priority addon. Other tiebreakers still apply between two library streams. 'Exclusive': if the group contains any library stream, all non-library streams are dropped before selection runs — only meaningful with Per Service or Per Addon modes where multiple winners are kept."
+                        value={
+                          userData.deduplicator?.libraryBehaviour ?? 'ignore'
+                        }
+                        onValueChange={(value) => {
+                          setUserData((prev) => ({
+                            ...prev,
+                            deduplicator: {
+                              ...prev.deduplicator,
+                              libraryBehaviour: value as
+                                | 'ignore'
+                                | 'prefer'
+                                | 'exclusive',
+                            },
+                          }));
+                        }}
+                        disabled={!userData.deduplicator?.enabled}
+                        options={[
+                          { label: 'Ignore', value: 'ignore' },
+                          { label: 'Prefer', value: 'prefer' },
+                          { label: 'Exclusive', value: 'exclusive' },
                         ]}
                       />
                     </SettingsCard>
@@ -3249,8 +3522,8 @@ function Content() {
         <div className="space-y-4">
           <div className="border rounded-md bg-gray-900 border-gray-800 p-4 max-h-96 overflow-auto">
             <div className="space-y-2">
-              {status?.settings.allowedRegexPatterns?.patterns.map(
-                (pattern, index) => (
+              {status?.settings.regexAccess.patterns?.map(
+                (pattern: string, index: number) => (
                   <div
                     key={index}
                     className="font-mono text-sm bg-gray-800 rounded px-3 py-2 break-all whitespace-pre-wrap"
@@ -3259,8 +3532,8 @@ function Content() {
                   </div>
                 )
               )}
-              {(!status?.settings.allowedRegexPatterns?.patterns ||
-                status.settings.allowedRegexPatterns.patterns.length === 0) && (
+              {(!status?.settings.regexAccess.patterns ||
+                status.settings.regexAccess.patterns.length === 0) && (
                 <div className="text-muted-foreground text-sm text-center">
                   No allowed regex patterns configured
                 </div>
@@ -3279,48 +3552,8 @@ function Content() {
         <div className="space-y-4">
           <div className="border rounded-md bg-gray-900 border-gray-800 p-4 max-h-96 overflow-auto">
             <div className="space-y-2">
-              {status?.settings.whitelistedSelUrls?.map((url, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 font-mono text-sm bg-gray-800 rounded px-3 py-2"
-                >
-                  <div className="flex-1 break-all whitespace-pre-wrap">
-                    {url}
-                  </div>
-                  <IconButton
-                    size="sm"
-                    intent="primary-subtle"
-                    icon={<FaRegCopy />}
-                    onClick={() =>
-                      copyToClipboard(url, {
-                        successMessage: 'URL copied to clipboard',
-                      })
-                    }
-                  />
-                </div>
-              ))}
-              {(!status?.settings.whitelistedSelUrls ||
-                status.settings.whitelistedSelUrls.length === 0) && (
-                <div className="text-muted-foreground text-sm text-center">
-                  No whitelisted sync URLs configured
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={allowedRegexUrlsModal.isOpen}
-        onOpenChange={allowedRegexUrlsModal.close}
-        title="Allowed Regex Pattern URLs"
-        description="These are URLs that you can import regex patterns from."
-      >
-        <div className="space-y-4">
-          <div className="border rounded-md bg-gray-900 border-gray-800 p-4 max-h-96 overflow-auto">
-            <div className="space-y-2">
-              {status?.settings.allowedRegexPatterns?.urls?.map(
-                (url, index) => (
+              {status?.settings.selSyncAccess.trustedUrls?.map(
+                (url: string, index: number) => (
                   <div
                     key={index}
                     className="flex items-center gap-2 font-mono text-sm bg-gray-800 rounded px-3 py-2"
@@ -3341,8 +3574,50 @@ function Content() {
                   </div>
                 )
               )}
-              {(!status?.settings.allowedRegexPatterns?.urls ||
-                status.settings.allowedRegexPatterns.urls.length === 0) && (
+              {(!status?.settings.selSyncAccess.trustedUrls ||
+                status.settings.selSyncAccess.trustedUrls.length === 0) && (
+                <div className="text-muted-foreground text-sm text-center">
+                  No whitelisted sync URLs configured
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={allowedRegexUrlsModal.isOpen}
+        onOpenChange={allowedRegexUrlsModal.close}
+        title="Allowed Regex Pattern URLs"
+        description="These are URLs that you can import regex patterns from."
+      >
+        <div className="space-y-4">
+          <div className="border rounded-md bg-gray-900 border-gray-800 p-4 max-h-96 overflow-auto">
+            <div className="space-y-2">
+              {status?.settings.regexAccess.urls?.map(
+                (url: string, index: number) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2 font-mono text-sm bg-gray-800 rounded px-3 py-2"
+                  >
+                    <div className="flex-1 break-all whitespace-pre-wrap">
+                      {url}
+                    </div>
+                    <IconButton
+                      size="sm"
+                      intent="primary-subtle"
+                      icon={<FaRegCopy />}
+                      onClick={() =>
+                        copyToClipboard(url, {
+                          successMessage: 'URL copied to clipboard',
+                        })
+                      }
+                    />
+                  </div>
+                )
+              )}
+              {(!status?.settings.regexAccess.urls ||
+                status.settings.regexAccess.urls.length === 0) && (
                 <div className="text-muted-foreground text-sm text-center">
                   No allowed regex pattern URLs configured
                 </div>

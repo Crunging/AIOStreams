@@ -11,6 +11,7 @@ import {
 } from '../utils/index.js';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import {
   DebridFile,
   DebridDownload,
@@ -29,6 +30,95 @@ import { ParsedResult } from '@viren070/parse-torrent-title';
 
 const logger = createLogger('debrid');
 
+/**
+ * Clean an NZB URL by stripping query parameters, ampersand parameters, and fragments.
+ */
+export function cleanNzbUrl(url: string): string {
+  let cleaned = url;
+  const qIndex = cleaned.indexOf('?');
+  if (qIndex !== -1) {
+    cleaned = cleaned.substring(0, qIndex);
+  } else {
+    const aIndex = cleaned.indexOf('&');
+    if (aIndex !== -1) {
+      cleaned = cleaned.substring(0, aIndex);
+    }
+  }
+  const hIndex = cleaned.indexOf('#');
+  if (hIndex !== -1) {
+    cleaned = cleaned.substring(0, hIndex);
+  }
+  return cleaned;
+}
+
+/**
+ * Compute an MD5 hash of a cleaned NZB URL.
+ */
+export function hashNzbUrl(url: string, clean: boolean = true): string {
+  return createHash('md5')
+    .update(clean ? cleanNzbUrl(url) : url)
+    .digest('hex');
+}
+
+/**
+ * Build the cache key used to store / look up NZB failover entries.
+ */
+export function buildFallbackKey(
+  uuid: string | undefined,
+  nzbUrl: string
+): string {
+  return getSimpleTextHash((uuid ?? '') + ':' + nzbUrl);
+}
+
+/**
+ * Build a compact, deterministic key for DistributedLock and playback-link
+ * cache lookups.  All absent values serialise to `-` so keys remain stable
+ * across call sites.  The NZB URL is MD5-hashed before inclusion to keep the
+ * key short and free of embedded tokens.
+ *
+ * @param prefix      Short use-site tag, e.g. `'st:lock'` or `'st:cache'`.
+ * @param serviceName Service identifier.
+ * @param playbackInfo The resolved playback info (provides type, hash, nzb, fileIndex, metadata).
+ * @param filename    Display filename passed into the resolve call.
+ * @param credential  Service API token / credential.
+ * @param clientIp    Optional client IP.
+ * @param flags       Operational flags — pass when building a *lock* key so
+ *                    that requests with different behaviours are not coalesced
+ *                    under the same lock; omit for inner cache keys.
+ */
+export function buildResolveKey(
+  prefix: string,
+  serviceName: string,
+  playbackInfo: PlaybackInfo,
+  filename: string,
+  credential: string,
+  clientIp?: string,
+  flags?: { cacheAndPlay?: boolean; autoRemoveDownloads?: boolean }
+): string {
+  const { type, hash, fileIndex } = playbackInfo;
+  const nzb = playbackInfo.type === 'usenet' ? playbackInfo.nzb : undefined;
+  const { season, episode, absoluteEpisode } = playbackInfo.metadata ?? {};
+  const parts: (string | number)[] = [
+    prefix,
+    serviceName,
+    type,
+    getSimpleTextHash(credential),
+    clientIp ?? '-',
+    hash,
+    nzb ? hashNzbUrl(nzb, false) : '-',
+    fileIndex ?? '-',
+    season ?? '-',
+    episode ?? '-',
+    absoluteEpisode ?? '-',
+    filename ?? '-',
+  ];
+  if (flags !== undefined) {
+    parts.push(String(flags.cacheAndPlay ?? '-'));
+    parts.push(String(flags.autoRemoveDownloads ?? '-'));
+  }
+  return parts.join(':');
+}
+
 export const BuiltinDebridServices = z.array(
   z.object({
     id: z.enum(constants.BUILTIN_SUPPORTED_SERVICES),
@@ -46,8 +136,11 @@ interface BaseFile {
   indexer?: string;
   seeders?: number;
   group?: string;
+  languages?: string[]; // languages extracted from indexer attributes (e.g. newznab/torznab)
   age?: number; // age in hours
+  downloadvolumefactor?: number; // multiplier for the download volume that counts toward the user’s account on the tracker
   duration?: number; // duration in seconds
+  library?: boolean; // whether the file is already in the user's library
 }
 
 export interface Torrent extends BaseFile {
@@ -246,7 +339,15 @@ export async function selectFileInTorrentOrNZB(
   const isNotVideo = debridDownload.files.map((file) => isNotVideoFile(file));
   const videoExists = isVideo.map((f) => f == true);
 
-  // Create a scoring system for each file
+  const normTitles: Set<string> | null = metadata?.titles?.length
+    ? new Set(metadata.titles.map(normaliseTitle))
+    : null;
+  const titleCache = new Map<string, string>();
+  const files = debridDownload.files;
+  const maxSize =
+    torrentOrNZB.size || files.reduce((max, f) => Math.max(max, f.size), 0);
+
+  // Score each file
   const fileScores = [];
   for (let index = 0; index < debridDownload.files.length; index++) {
     const file = debridDownload.files[index];
@@ -290,6 +391,11 @@ export async function selectFileInTorrentOrNZB(
       fileReport.scoreBreakdown.sampleTrailerPenalty = -500;
     }
 
+    if (file.name && /nc(ed|op)/i.test(file.name)) {
+      score -= 500;
+      fileReport.scoreBreakdown.ncedNcopPenalty = -500;
+    }
+
     // Base score from video file status (highest priority)
     if (isVideo[index]) {
       score += 1000;
@@ -316,13 +422,24 @@ export async function selectFileInTorrentOrNZB(
     }
 
     // Season/Episode matching (second highest priority)
-    if (parsed && !isSeasonWrong(parsed, metadata)) {
-      score += 500;
-      fileReport.scoreBreakdown.seasonMatch = 500;
-    }
-    if (!parsed?.seasons?.length && metadata?.season) {
-      score -= 500;
-      fileReport.scoreBreakdown.missingSeasonPenalty = -500;
+    // Season bonus is ONLY awarded when the season is explicitly present in the
+    // filename and matches. This prevents seasonless files (extras, OVAs, NCED/NCOP)
+    // from getting a net-zero season score via the old +500/-500 cancellation.
+    const hasSeason = (parsed.seasons?.length ?? 0) > 0;
+    if (metadata?.season) {
+      if (hasSeason && !isSeasonWrong(parsed, metadata)) {
+        // Season explicitly present and correct
+        score += 500;
+        fileReport.scoreBreakdown.seasonMatch = 500;
+      } else if (hasSeason) {
+        // Season explicitly present but wrong
+        score -= 800;
+        fileReport.scoreBreakdown.wrongSeasonPenalty = -800;
+      } else {
+        // Season expected but not present in file (e.g. extras, absolute-numbered)
+        score -= 300;
+        fileReport.scoreBreakdown.missingSeasonPenalty = -300;
+      }
     }
 
     if (parsed && !isEpisodeWrong(parsed, metadata)) {
@@ -347,36 +464,81 @@ export async function selectFileInTorrentOrNZB(
         const matchesRegular = parsed.episodes?.includes(metadata.episode);
 
         if (matchesAbsolute && isExactMatch) {
-          score += 2000;
+          score += 600;
           fileReport.scoreBreakdown.episodeMatchType = 'exactAbsolute';
-          fileReport.scoreBreakdown.episodeScore = 2000;
+          fileReport.scoreBreakdown.episodeScore = 600;
         } else if (matchesAbsolute && isBatchMatch) {
-          score += 500;
+          score += 200;
           fileReport.scoreBreakdown.episodeMatchType = 'batchAbsolute';
-          fileReport.scoreBreakdown.episodeScore = 500;
+          fileReport.scoreBreakdown.episodeScore = 200;
         } else if (matchesRelativeAbsolute && isExactMatch) {
-          score += 1000;
+          score += 400;
           fileReport.scoreBreakdown.episodeMatchType = 'exactRelativeAbsolute';
-          fileReport.scoreBreakdown.episodeScore = 1000;
+          fileReport.scoreBreakdown.episodeScore = 400;
         } else if (matchesRelativeAbsolute && isBatchMatch) {
-          score += 300;
-          fileReport.scoreBreakdown.episodeMatchType = 'batchRelativeAbsolute';
-          fileReport.scoreBreakdown.episodeScore = 300;
-        } else if (matchesRegular && isExactMatch) {
-          score += 300;
-          fileReport.scoreBreakdown.episodeMatchType = 'exactRegular';
-          fileReport.scoreBreakdown.episodeScore = 300;
-        } else if (matchesRegular && isBatchMatch) {
           score += 100;
-          fileReport.scoreBreakdown.episodeMatchType = 'batchRegular';
+          fileReport.scoreBreakdown.episodeMatchType = 'batchRelativeAbsolute';
           fileReport.scoreBreakdown.episodeScore = 100;
+        } else if (matchesRegular && isExactMatch) {
+          score += 200;
+          fileReport.scoreBreakdown.episodeMatchType = 'exactRegular';
+          fileReport.scoreBreakdown.episodeScore = 200;
+        } else if (matchesRegular && isBatchMatch) {
+          score += 75;
+          fileReport.scoreBreakdown.episodeMatchType = 'batchRegular';
+          fileReport.scoreBreakdown.episodeScore = 75;
+        }
+      } else if (
+        parsedHasSeason &&
+        metadata?.season &&
+        metadata?.absoluteEpisode &&
+        metadata?.episode &&
+        metadata.absoluteEpisode !== metadata.episode
+      ) {
+        // File has season info: prefer regular episode over absolute.
+        const matchesRegular = parsed.episodes?.includes(metadata.episode);
+        const matchesAbsolute = parsed.episodes?.includes(
+          metadata.absoluteEpisode
+        );
+        const matchesRelativeAbsolute = metadata.relativeAbsoluteEpisode
+          ? parsed.episodes?.includes(metadata.relativeAbsoluteEpisode)
+          : false;
+
+        if (matchesRegular && isExactMatch) {
+          score += 800;
+          fileReport.scoreBreakdown.episodeMatchType = 'exact';
+          fileReport.scoreBreakdown.episodeScore = 800;
+        } else if (matchesRegular && isBatchMatch) {
+          score += 250;
+          fileReport.scoreBreakdown.episodeMatchType = 'batch';
+          fileReport.scoreBreakdown.episodeScore = 250;
+        } else if (matchesAbsolute && isExactMatch) {
+          score += 200;
+          fileReport.scoreBreakdown.episodeMatchType =
+            'exactAbsoluteWithSeason';
+          fileReport.scoreBreakdown.episodeScore = 200;
+        } else if (matchesRelativeAbsolute && isExactMatch) {
+          score += 150;
+          fileReport.scoreBreakdown.episodeMatchType =
+            'exactRelativeAbsoluteWithSeason';
+          fileReport.scoreBreakdown.episodeScore = 150;
+        } else if (matchesAbsolute && isBatchMatch) {
+          score += 100;
+          fileReport.scoreBreakdown.episodeMatchType =
+            'batchAbsoluteWithSeason';
+          fileReport.scoreBreakdown.episodeScore = 100;
+        } else if (matchesRelativeAbsolute && isBatchMatch) {
+          score += 50;
+          fileReport.scoreBreakdown.episodeMatchType =
+            'batchRelativeAbsoluteWithSeason';
+          fileReport.scoreBreakdown.episodeScore = 50;
         }
       } else {
         // Standard scoring: strongly prefer exact episodes over batches
         if (isExactMatch) {
-          score += 750;
+          score += 800;
           fileReport.scoreBreakdown.episodeMatchType = 'exact';
-          fileReport.scoreBreakdown.episodeScore = 750;
+          fileReport.scoreBreakdown.episodeScore = 800;
         } else if (isBatchMatch) {
           score += 250;
           fileReport.scoreBreakdown.episodeMatchType = 'batch';
@@ -393,31 +555,28 @@ export async function selectFileInTorrentOrNZB(
     }
 
     // Title matching (third priority)
-    const titleMatchFunc =
-      options?.useLevenshteinMatching == false ? isTitleWrongN : isTitleWrong;
-    if (
-      parsed?.title &&
-      (videoExists ? isVideo[index] : true) &&
-      !titleMatchFunc(
-        {
-          title: preprocessTitle(
-            parsed.title,
-            torrentOrNZB.title ?? '',
-            metadata?.titles ?? []
-          ),
-        },
-        metadata
-      )
-    ) {
-      score += 100;
-      fileReport.scoreBreakdown.titleMatch = 100;
+    if (parsed?.title && (videoExists ? isVideo[index] : true)) {
+      let preprocessed = titleCache.get(parsed.title);
+      if (preprocessed === undefined) {
+        preprocessed = preprocessTitle(
+          parsed.title,
+          torrentOrNZB.title ?? '',
+          metadata?.titles ?? []
+        );
+        titleCache.set(parsed.title, preprocessed);
+      }
+      const titleMatches =
+        normTitles === null
+          ? true
+          : normTitles.has(normaliseTitle(preprocessed));
+      if (titleMatches) {
+        score += 200;
+        fileReport.scoreBreakdown.titleMatch = 200;
+      }
     }
 
     // Size based score (lowest priority but still relevant)
     // We normalize the size to be between 0 and 50 points
-    const files = debridDownload.files || [];
-    const maxSize =
-      torrentOrNZB.size || files.reduce((max, f) => Math.max(max, f.size), 0);
     const sizeScore = maxSize > 0 ? (file.size / maxSize) * 50 : 0;
     score += sizeScore;
     fileReport.scoreBreakdown.sizeScore = sizeScore;
@@ -443,10 +602,6 @@ export async function selectFileInTorrentOrNZB(
       score: Math.max(score, 0),
       index,
     });
-
-    if ((index + 1) % 10 === 0) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
   }
 
   if (fileScores.length === 0) {
@@ -463,7 +618,6 @@ export async function selectFileInTorrentOrNZB(
 
   // Select the best matching file
   const bestMatch = fileScores[0];
-  // return bestMatch.file;
   const parsedFile = parsedFiles.get(bestMatch.file.name ?? '');
   const parsedTitle = parsedFiles.get(torrentOrNZB.title ?? '');
 
@@ -473,15 +627,6 @@ export async function selectFileInTorrentOrNZB(
     parsedTitle &&
     !options?.skipSeasonEpisodeCheck
   ) {
-    // if (
-    //   !isSeasonWrong(parsed, metadata) &&
-    //   !isSeasonWrong(parsedTorrentOrNZB, metadata)
-    // ) {
-    //   logger.debug(
-    //     `Season ${metadata.season} not found in ${torrentOrNZB.title} and ${bestMatch.file.name}, skipping...`
-    //   );
-    //   return undefined;
-    // }
     if (
       isEpisodeWrong(parsedFile, metadata) ||
       isEpisodeWrong(parsedTitle, metadata)
@@ -495,7 +640,6 @@ export async function selectFileInTorrentOrNZB(
       return undefined;
     }
   }
-
   report.selectedFile = {
     name: bestMatch.file.name,
     index: bestMatch.index,
@@ -627,6 +771,17 @@ export function isNotVideoFile(file: DebridFile): boolean {
     '.db',
     '.dbf',
     '.bak',
+    '.par2',
+    '.clpi',
+    '.jar',
+    '.mpls',
+    '.otf',
+    '.properties',
+    '.bdjo',
+    '.bdmv',
+    '.crt',
+    '.crl',
+    '.sig',
   ];
   const patterns = [/\.7z\.\d+$/];
   return (

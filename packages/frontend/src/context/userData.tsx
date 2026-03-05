@@ -5,6 +5,7 @@ import {
   RESOLUTIONS,
   SERVICE_DETAILS,
   DEFAULT_PRECACHE_SELECTOR,
+  DEFAULT_SMART_DETECT_ATTRIBUTES,
 } from '../../../core/src/utils/constants';
 import { useStatus } from './status';
 
@@ -123,11 +124,20 @@ export function applyMigrations(config: any): UserData {
 
   for (const key of expressionLists) {
     if (Array.isArray((config as any)[key])) {
-      (config as any)[key] = (config as any)[key].map((expr: unknown) =>
-        typeof expr === 'string'
-          ? migrateAnimeQueryTypeInExpression(expr)
-          : expr
-      );
+      (config as any)[key] = (config as any)[key].map((expr: unknown) => {
+        if (typeof expr === 'string') {
+          return migrateAnimeQueryTypeInExpression(expr);
+        }
+        if (typeof expr === 'object' && expr !== null && 'expression' in expr) {
+          return {
+            ...(expr as any),
+            expression: migrateAnimeQueryTypeInExpression(
+              (expr as any).expression
+            ),
+          };
+        }
+        return expr;
+      });
     }
   }
 
@@ -179,6 +189,50 @@ export function applyMigrations(config: any): UserData {
   delete config.alwaysPrecache;
   delete config.precacheCondition;
 
+  // migrate p2pWrap to serviceWrap
+  if (config.p2pWrap !== undefined && config.serviceWrap === undefined) {
+    config.serviceWrap = config.p2pWrap;
+    delete config.p2pWrap;
+  }
+
+  // migrate stream expressions from string[] to {expression, enabled}[]
+  const streamExpressionKeys = [
+    'excludedStreamExpressions',
+    'requiredStreamExpressions',
+    'preferredStreamExpressions',
+    'includedStreamExpressions',
+  ] as const;
+  for (const key of streamExpressionKeys) {
+    if (
+      Array.isArray(config[key]) &&
+      config[key].some((expr: unknown) => typeof expr === 'string')
+    ) {
+      config[key] = config[key].map((expr: unknown) =>
+        typeof expr === 'string' ? { expression: expr, enabled: true } : expr
+      );
+    }
+  }
+
+  // migrate forceToTop at addon level to pinPosition set to 'top'
+  if (config.presets && Array.isArray(config.presets)) {
+    config.presets = config.presets.map((preset: any) => {
+      if (
+        preset.options?.forceToTop === true &&
+        preset.options.pinPosition === undefined
+      ) {
+        delete preset.options.forceToTop;
+        return {
+          ...preset,
+          options: {
+            ...preset.options,
+            pinPosition: 'top',
+          },
+        };
+      }
+      return preset;
+    });
+  }
+
   return config;
 }
 
@@ -213,6 +267,11 @@ export function removeInvalidPresetReferences(config: UserData) {
         existingPresetIds?.includes(addon)
       ),
     }));
+  }
+  if (config.serviceWrap?.presets) {
+    config.serviceWrap.presets = config.serviceWrap.presets.filter((preset) =>
+      existingPresetIds?.includes(preset)
+    );
   }
   return config;
 }
@@ -294,6 +353,13 @@ export const DefaultUserData: UserData = {
     cached: 'single_result',
     uncached: 'per_service',
     p2p: 'single_result',
+    http: 'disabled',
+    live: 'disabled',
+    youtube: 'disabled',
+    external: 'disabled',
+    smartDetectAttributes: DEFAULT_SMART_DETECT_ATTRIBUTES,
+    smartDetectRounding: 10,
+    libraryBehaviour: 'ignore',
   },
   autoPlay: {
     enabled: true,
@@ -328,9 +394,12 @@ export const DefaultUserData: UserData = {
     addons: [],
     requestTypes: [],
   },
+  precacheNextEpisode: false,
+  precacheSingleStream: true,
   precacheSelector: DEFAULT_PRECACHE_SELECTOR,
   enableSeadex: true,
   regexOverrides: [],
+  checkOwned: true,
 };
 
 interface UserDataContextType {

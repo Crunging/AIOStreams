@@ -460,8 +460,8 @@ function validateKitsuEntry(data: any): KitsuEntry | null {
         ? parseInt(data.fanartLogoId)
         : data.fanartLogoId,
     tvdbId:
-      typeof data.tvdb_id === 'string'
-        ? parseInt(data.tvdb_id)
+      typeof (data.tvdb_id || data.tvdbId) === 'string'
+        ? parseInt(data.tvdb_id || data.tvdbId)
         : data.tvdb_id || data.tvdbId,
     imdbId: data.imdb_id || data.imdbId,
     title: data.title,

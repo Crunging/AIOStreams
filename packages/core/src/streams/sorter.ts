@@ -20,10 +20,13 @@ class StreamSorter {
     context: StreamContext
   ): Promise<ParsedStream[]> {
     const type = context.isAnime ? 'anime' : context.type;
-    const forcedToTopStreams = allStreams.filter(
-      (stream) => stream.addon.forceToTop
+    const pinnedToTopStreams = allStreams.filter(
+      (stream) => stream.addon.pinPosition === 'top'
     );
-    const streams = allStreams.filter((stream) => !stream.addon.forceToTop);
+    const pinnedToBottomStreams = allStreams.filter(
+      (stream) => stream.addon.pinPosition === 'bottom'
+    );
+    const streams = allStreams.filter((stream) => !stream.addon.pinPosition);
 
     let primarySortCriteria = this.userData.sortCriteria.global;
     let cachedSortCriteria = this.userData.sortCriteria.cached;
@@ -127,14 +130,19 @@ class StreamSorter {
       });
     }
 
+    const pinnedParts = [];
+    if (pinnedToTopStreams.length > 0) {
+      pinnedParts.push(`${pinnedToTopStreams.length} pinned to top`);
+    }
+    if (pinnedToBottomStreams.length > 0) {
+      pinnedParts.push(`${pinnedToBottomStreams.length} pinned to bottom`);
+    }
     logger.info(
       `Sorted ${sortedStreams.length}${
-        forcedToTopStreams.length > 0
-          ? ` + ${forcedToTopStreams.length} forced to top`
-          : ''
+        pinnedParts.length > 0 ? ` + ${pinnedParts.join(', ')}` : ''
       } streams in ${getTimeTakenSincePoint(start)}`
     );
-    return [...forcedToTopStreams, ...sortedStreams];
+    return [...pinnedToTopStreams, ...sortedStreams, ...pinnedToBottomStreams];
   }
 
   private dynamicSortKey(

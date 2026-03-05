@@ -86,8 +86,7 @@ export class SelAccess {
     if (isUnrestricted) return urls;
 
     // Non-trusted users can only use whitelisted SEL URLs
-    const allowedUrls = Env.WHITELISTED_SEL_URLS || [];
-    return urls.filter((url) => allowedUrls.includes(url));
+    return urls.filter((url) => this.manager.allowedUrls.includes(url));
   }
 
   /**
@@ -196,6 +195,21 @@ export class SelAccess {
   }
 
   /**
+   * Add URLs to the allowed list for SEL syncing.
+   * URLs added this way are considered trusted and can be used for syncing.
+   */
+  public static addAllowedUrls(urls: string[]): void {
+    this.manager.addAllowedUrls(urls);
+  }
+
+  /**
+   * Get all allowed URLs for SEL syncing.
+   */
+  public static getAllowedUrls(): string[] {
+    return this.manager.allowedUrls;
+  }
+
+  /**
    * Find a matching SEL override for an expression.
    * Matches by exact expression string or by comparing extracted names
    * from the expression against the override's stored `exprNames` array.
@@ -212,12 +226,13 @@ export class SelAccess {
 
       // Match by extracted names vs stored exprNames
       if (o.exprNames && o.exprNames.length > 0) {
-        const names = extractNamesFromExpression(expr.expression);
-        if (
-          names &&
-          names.length === o.exprNames.length &&
-          names.every((n, i) => n === o.exprNames![i])
-        ) {
+        const names = extractNamesFromExpression(expr.expression, false);
+        const matches = (list?: string[]) =>
+          !!list &&
+          list.length === o.exprNames!.length &&
+          list.every((n, i) => n === o.exprNames![i]);
+
+        if (matches(names)) {
           return true;
         }
       }
@@ -253,10 +268,10 @@ export class SelAccess {
   public static async resolveSyncedExpressionsForValidation(
     userData: UserData
   ): Promise<{
-    included: string[];
-    excluded: string[];
-    required: string[];
-    preferred: string[];
+    included: { expression: string; enabled: boolean }[];
+    excluded: { expression: string; enabled: boolean }[];
+    required: { expression: string; enabled: boolean }[];
+    preferred: { expression: string; enabled: boolean }[];
     ranked: { expression: string; score: number; enabled: boolean }[];
   }> {
     try {
@@ -266,29 +281,41 @@ export class SelAccess {
             userData.syncedIncludedStreamExpressionUrls,
             [],
             userData,
-            (item) => item.expression,
-            (expr) => expr
+            (item) => ({
+              expression: item.expression,
+              enabled: item.enabled ?? true,
+            }),
+            (item) => item.expression
           ),
           this.syncStreamExpressions(
             userData.syncedExcludedStreamExpressionUrls,
             [],
             userData,
-            (item) => item.expression,
-            (expr) => expr
+            (item) => ({
+              expression: item.expression,
+              enabled: item.enabled ?? true,
+            }),
+            (item) => item.expression
           ),
           this.syncStreamExpressions(
             userData.syncedRequiredStreamExpressionUrls,
             [],
             userData,
-            (item) => item.expression,
-            (expr) => expr
+            (item) => ({
+              expression: item.expression,
+              enabled: item.enabled ?? true,
+            }),
+            (item) => item.expression
           ),
           this.syncStreamExpressions(
             userData.syncedPreferredStreamExpressionUrls,
             [],
             userData,
-            (item) => item.expression,
-            (expr) => expr
+            (item) => ({
+              expression: item.expression,
+              enabled: item.enabled ?? true,
+            }),
+            (item) => item.expression
           ),
           this.syncStreamExpressions(
             userData.syncedRankedStreamExpressionUrls,

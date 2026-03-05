@@ -159,7 +159,11 @@ export class NekoBtStreamParser extends BuiltinStreamParser {
         }
       }
       // languages
-      (fileMetadata.audioLanguages || [])
+      [
+        ...(fileMetadata.audioLanguages ?? []),
+        ...(fileMetadata.fansubLanguages ?? []),
+        ...(fileMetadata.subtitleLanguages ?? []),
+      ]
         .map(mapLanguageCode)
         .map(convertLangCodeToName)
         .forEach((lang: string | undefined) => {

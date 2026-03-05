@@ -19,11 +19,14 @@ import {
   Env,
   maskSensitiveInfo,
   RPDB,
+  AIOratings,
   FeatureControl,
   RegexAccess,
   compileRegex,
   constants,
   SelAccess,
+  createPosterService,
+  APIError,
 } from './index.js';
 import { z, ZodError } from 'zod';
 import {
@@ -290,18 +293,20 @@ export async function validateConfig(
     Env.ADDON_PASSWORD.length > 0 &&
     !Env.ADDON_PASSWORD.includes(config.addonPassword || '')
   ) {
-    throw new Error(
-      'Invalid addon password. Please enter the value of the ADDON_PASSWORD environment variable '
-    );
+    throw new APIError(constants.ErrorCode.ADDON_PASSWORD_INVALID);
   }
 
   validateSyncedRegexUrls(config, options?.skipErrorsFromAddonsOrProxies);
   validateSyncedSelUrls(config, options?.skipErrorsFromAddonsOrProxies);
 
-  let excludedStreamExpressions: string[] = [];
-  let requiredStreamExpressions: string[] = [];
-  let preferredStreamExpressions: string[] = [];
-  let includedStreamExpressions: string[] = [];
+  let excludedStreamExpressions: { expression: string; enabled: boolean }[] =
+    [];
+  let requiredStreamExpressions: { expression: string; enabled: boolean }[] =
+    [];
+  let preferredStreamExpressions: { expression: string; enabled: boolean }[] =
+    [];
+  let includedStreamExpressions: { expression: string; enabled: boolean }[] =
+    [];
   let rankedStreamExpressions: {
     expression: string;
     score: number;
@@ -344,10 +349,10 @@ export async function validateConfig(
 
   // Validate total character count across all stream expressions
   const allExpressions: string[] = [
-    ...(excludedStreamExpressions || []),
-    ...(requiredStreamExpressions || []),
-    ...(preferredStreamExpressions || []),
-    ...(includedStreamExpressions || []),
+    ...(excludedStreamExpressions?.map((e) => e.expression) || []),
+    ...(requiredStreamExpressions?.map((e) => e.expression) || []),
+    ...(preferredStreamExpressions?.map((e) => e.expression) || []),
+    ...(includedStreamExpressions?.map((e) => e.expression) || []),
     ...(rankedStreamExpressions?.map((r) => r.expression) || []),
   ];
   const totalCharacters = allExpressions.reduce(
@@ -385,6 +390,20 @@ export async function validateConfig(
           `Merged catalog "${mergedCatalog.name}" has ${mergedCatalog.catalogIds.length} source catalogs, but the maximum is ${Env.MAX_MERGED_CATALOG_SOURCES}`
         );
       }
+    }
+  }
+
+  // validate NZB failover count against the server limit
+  if (
+    config.nzbFailover?.count &&
+    config.nzbFailover.count > Env.MAX_NZB_FAILOVER_COUNT
+  ) {
+    if (options?.skipErrorsFromAddonsOrProxies) {
+      config.nzbFailover.count = Env.MAX_NZB_FAILOVER_COUNT;
+    } else {
+      throw new Error(
+        `NZB failover count is ${config.nzbFailover.count}, but the maximum allowed is ${Env.MAX_NZB_FAILOVER_COUNT}`
+      );
     }
   }
 
@@ -434,15 +453,15 @@ export async function validateConfig(
   }
 
   // validate excluded filter condition
-  const streamExpressions = [
-    ...(config.excludedStreamExpressions ?? []),
-    ...(config.requiredStreamExpressions ?? []),
-    ...(config.preferredStreamExpressions ?? []),
-    ...(config.includedStreamExpressions ?? []),
+  const expressionsToValidate: string[] = [
+    ...(config.excludedStreamExpressions?.map((e) => e.expression) ?? []),
+    ...(config.requiredStreamExpressions?.map((e) => e.expression) ?? []),
+    ...(config.preferredStreamExpressions?.map((e) => e.expression) ?? []),
+    ...(config.includedStreamExpressions?.map((e) => e.expression) ?? []),
     ...(config.rankedStreamExpressions?.map((r) => r.expression) ?? []),
   ];
 
-  for (const expression of streamExpressions) {
+  for (const expression of expressionsToValidate) {
     try {
       await StreamSelector.testSelect(expression);
     } catch (error) {
@@ -471,15 +490,15 @@ export async function validateConfig(
     options?.decryptValues
   );
 
-  if (config.rpdbApiKey) {
+  const posterService = createPosterService(config);
+  if (config.posterService && posterService) {
     try {
-      const rpdb = new RPDB(config.rpdbApiKey);
-      await rpdb.validateApiKey();
+      await posterService.validateApiKey();
     } catch (error) {
       if (!options?.skipErrorsFromAddonsOrProxies) {
-        throw new Error(`Invalid RPDB API key: ${error}`);
+        throw new Error(`Invalid Poster API key: ${error}`);
       }
-      logger.warn(`Invalid RPDB API key: ${error}`);
+      logger.warn(`Invalid Poster API key: ${error}`);
     }
   }
 
@@ -583,6 +602,12 @@ function removeInvalidPresetReferences(config: UserData) {
         existingPresetIds?.includes(addon)
       ),
     }));
+  }
+
+  if (config.serviceWrap?.presets) {
+    config.serviceWrap.presets = config.serviceWrap.presets.filter((preset) =>
+      existingPresetIds?.includes(preset)
+    );
   }
   return config;
 }
@@ -704,11 +729,20 @@ export function applyMigrations(config: any): UserData {
 
   for (const key of expressionLists) {
     if (Array.isArray((config as any)[key])) {
-      (config as any)[key] = (config as any)[key].map((expr: unknown) =>
-        typeof expr === 'string'
-          ? migrateAnimeQueryTypeInExpression(expr)
-          : expr
-      );
+      (config as any)[key] = (config as any)[key].map((expr: unknown) => {
+        if (typeof expr === 'string') {
+          return migrateAnimeQueryTypeInExpression(expr);
+        }
+        if (typeof expr === 'object' && expr !== null && 'expression' in expr) {
+          return {
+            ...(expr as any),
+            expression: migrateAnimeQueryTypeInExpression(
+              (expr as any).expression
+            ),
+          };
+        }
+        return expr;
+      });
     }
   }
 
@@ -760,6 +794,41 @@ export function applyMigrations(config: any): UserData {
   }
   delete config.alwaysPrecache;
   delete config.precacheCondition;
+
+  // migrate stream expressions from string[] to {expression, enabled}[]
+  const streamExpressionKeys = [
+    'excludedStreamExpressions',
+    'requiredStreamExpressions',
+    'preferredStreamExpressions',
+    'includedStreamExpressions',
+  ] as const;
+  for (const key of streamExpressionKeys) {
+    if (Array.isArray(config[key])) {
+      config[key] = config[key].map((item: unknown) =>
+        typeof item === 'string' ? { expression: item, enabled: true } : item
+      );
+    }
+  }
+
+  // migrate forceToTop at addon level to pinPosition set to 'top'
+  if (config.presets && Array.isArray(config.presets)) {
+    config.presets = config.presets.map((preset: any) => {
+      if (
+        preset.options?.forceToTop === true &&
+        preset.options.pinPosition === undefined
+      ) {
+        delete preset.options.forceToTop;
+        return {
+          ...preset,
+          options: {
+            ...preset.options,
+            pinPosition: 'top',
+          },
+        };
+      }
+      return preset;
+    });
+  }
 
   return config;
 }
@@ -854,7 +923,7 @@ function validateSyncedRegexUrls(
 
   if (isUnrestricted) return;
 
-  const allowedUrls = Env.ALLOWED_REGEX_PATTERNS_URLS || [];
+  const allowedUrls = RegexAccess.getAllowedUrls();
   const urlsToCheck = [
     ...(config.syncedIncludedRegexUrls || []),
     ...(config.syncedExcludedRegexUrls || []),
@@ -880,7 +949,7 @@ function validateSyncedSelUrls(config: UserData, skipErrors: boolean = false) {
 
   if (isUnrestricted) return;
 
-  const allowedUrls = Env.WHITELISTED_SEL_URLS || [];
+  const allowedUrls = SelAccess.getAllowedUrls();
   const urlsToCheck = [
     ...(config.syncedIncludedStreamExpressionUrls || []),
     ...(config.syncedExcludedStreamExpressionUrls || []),

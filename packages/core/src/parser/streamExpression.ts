@@ -17,6 +17,7 @@ const logger = createLogger('stream-expression');
 
 export abstract class StreamExpressionEngine {
   protected parser: Parser;
+  protected _pinInstructions: Map<string, 'top' | 'bottom'> = new Map();
 
   constructor() {
     // only allow comparison and logical operators
@@ -96,6 +97,10 @@ export abstract class StreamExpressionEngine {
     this.parser.consts.latestSeason = context.latestSeason ?? -1;
     this.parser.consts.ongoingSeason =
       context.hasNextEpisode && context.season === context.latestSeason;
+  }
+
+  public getPinInstructions(): Map<string, 'top' | 'bottom'> {
+    return this._pinInstructions;
   }
 
   private setupParserFunctions() {
@@ -454,6 +459,54 @@ export abstract class StreamExpressionEngine {
         }
         return true;
       });
+    };
+
+    this.parser.functions.seMatched = function (
+      streams: ParsedStream[],
+      ...seNames: string[]
+    ) {
+      if (seNames.length === 0) {
+        return streams.filter((stream) => stream.streamExpressionMatched);
+      }
+      return streams.filter((stream) =>
+        seNames.some(
+          (seName) => stream.streamExpressionMatched?.name === seName
+        )
+      );
+    };
+
+    this.parser.functions.seMatchedInRange = function (
+      streams: ParsedStream[],
+      min: number,
+      max: number
+    ) {
+      return streams.filter((stream) => {
+        if (!stream.streamExpressionMatched) {
+          return false;
+        } else if (
+          stream.streamExpressionMatched.index < min ||
+          stream.streamExpressionMatched.index > max
+        ) {
+          return false;
+        }
+        return true;
+      });
+    };
+
+    this.parser.functions.rseMatched = function (
+      streams: ParsedStream[],
+      ...rseNames: string[]
+    ) {
+      if (rseNames.length === 0) {
+        return streams.filter(
+          (stream) => stream.rankedStreamExpressionsMatched?.length
+        );
+      }
+      return streams.filter((stream) =>
+        rseNames.some((rseName) =>
+          stream.rankedStreamExpressionsMatched?.some((r) => r === rseName)
+        )
+      );
     };
 
     this.parser.functions.indexer = function (
@@ -933,7 +986,7 @@ export abstract class StreamExpressionEngine {
       return streams.filter((stream) => stream.seadex?.isSeadex === true);
     };
 
-    this.parser.functions.streamExpressionScore = function (
+    this.parser.functions.seScore = function (
       streams: ParsedStream[],
       minScore?: number,
       maxScore?: number
@@ -958,6 +1011,8 @@ export abstract class StreamExpressionEngine {
         return true;
       });
     };
+
+    this.parser.functions.streamExpressionScore = this.parser.functions.seScore;
 
     this.parser.functions.regexScore = function (
       streams: ParsedStream[],
@@ -1098,6 +1153,154 @@ export abstract class StreamExpressionEngine {
         throw new Error('Your streams input must be an array of streams');
       }
       return streams.slice(start, end);
+    };
+
+    this.parser.functions.perGroup = function (
+      streams: ParsedStream[],
+      attribute: string,
+      n: number,
+      ...filterValues: string[]
+    ): ParsedStream[] {
+      if (!Array.isArray(streams)) {
+        throw new Error('perGroup: first argument must be an array of streams');
+      }
+      if (typeof attribute !== 'string' || attribute.length === 0) {
+        throw new Error(
+          'perGroup: second argument must be a non-empty attribute string'
+        );
+      }
+      if (
+        typeof n !== 'number' ||
+        !Number.isFinite(n) ||
+        !Number.isInteger(n) ||
+        n < 1
+      ) {
+        throw new Error('perGroup: third argument must be a positive integer');
+      }
+      if (filterValues.some((v) => typeof v !== 'string')) {
+        throw new Error('perGroup: filter values must be strings');
+      }
+
+      const normalised = filterValues.map((v) => v.toLowerCase());
+
+      /** Return the group keys for a stream under the chosen attribute. */
+      const getKeys = (stream: ParsedStream): string[] => {
+        switch (attribute) {
+          case 'resolution':
+            return [stream.parsedFile?.resolution?.toLowerCase() || 'unknown'];
+          case 'quality':
+            return [stream.parsedFile?.quality?.toLowerCase() || 'unknown'];
+          case 'encode':
+            return [stream.parsedFile?.encode?.toLowerCase() || 'unknown'];
+          case 'type':
+            return [stream.type.toLowerCase()];
+          case 'service':
+            return [(stream.service?.id || 'none').toLowerCase()];
+          case 'indexer':
+            return [(stream.indexer || 'unknown').toLowerCase()];
+          case 'releaseGroup':
+            return [
+              (stream.parsedFile?.releaseGroup || 'unknown').toLowerCase(),
+            ];
+          case 'visualTag':
+            return (
+              stream.parsedFile?.visualTags.length
+                ? stream.parsedFile.visualTags
+                : ['Unknown']
+            ).map((v) => v.toLowerCase());
+          case 'audioTag':
+            return (
+              stream.parsedFile?.audioTags.length
+                ? stream.parsedFile.audioTags
+                : ['Unknown']
+            ).map((v) => v.toLowerCase());
+          case 'audioChannel':
+            return (
+              stream.parsedFile?.audioChannels?.length
+                ? stream.parsedFile.audioChannels
+                : ['Unknown']
+            ).map((v) => v.toLowerCase());
+          case 'language':
+            return (
+              stream.parsedFile?.languages?.length
+                ? stream.parsedFile.languages
+                : ['Unknown']
+            ).map((v) => v.toLowerCase());
+          default:
+            throw new Error(
+              `perGroup: unsupported attribute '${attribute}'. Supported: resolution, quality, encode, type, service, indexer, releaseGroup, visualTag, audioTag, audioChannel, language`
+            );
+        }
+      };
+
+      const buckets = new Map<string, ParsedStream[]>();
+      const groupOrder: string[] = [];
+      // Deduplicate across groups (for multi-value attributes a stream could
+      // match multiple groups)
+      const added = new Set<string>();
+
+      for (const stream of streams) {
+        const keys = getKeys(stream);
+        let assignedKey: string | undefined;
+        if (normalised.length > 0) {
+          assignedKey = keys.find((k) => normalised.includes(k));
+        } else {
+          assignedKey = keys[0];
+        }
+        if (assignedKey === undefined) continue; // filtered out
+
+        if (!buckets.has(assignedKey)) {
+          buckets.set(assignedKey, []);
+          groupOrder.push(assignedKey);
+        }
+        const bucket = buckets.get(assignedKey)!;
+        if (bucket.length < n && !added.has(stream.id)) {
+          bucket.push(stream);
+          added.add(stream.id);
+        }
+      }
+
+      // interleave the buckets
+      const result: ParsedStream[] = [];
+      let round = 0;
+      while (result.length < added.size) {
+        let anyAdded = false;
+        for (const key of groupOrder) {
+          const bucket = buckets.get(key)!;
+          if (round < bucket.length) {
+            result.push(bucket[round]);
+            anyAdded = true;
+          }
+        }
+        if (!anyAdded) break;
+        round++;
+      }
+
+      return result;
+    };
+
+    this.parser.functions.pin = (
+      matchedStreams: ParsedStream[],
+      position: string = 'top',
+      returnMatched: boolean = false
+    ) => {
+      if (
+        !Array.isArray(matchedStreams) ||
+        matchedStreams.some((stream) => !stream.type)
+      ) {
+        throw new Error(
+          'The first argument must be a filtered subset of streams to pin'
+        );
+      }
+      if (position !== 'top' && position !== 'bottom') {
+        throw new Error("Position must be 'top' or 'bottom'");
+      }
+
+      for (const stream of matchedStreams) {
+        this._pinInstructions.set(stream.id, position as 'top' | 'bottom');
+      }
+
+      return returnMatched ? matchedStreams : [];
     };
   }
 
@@ -1330,14 +1533,15 @@ export class StreamSelector extends StreamExpressionEngine {
  * @returns Array of extracted names, or undefined if none found
  */
 export function extractNamesFromExpression(
-  expression: string
+  expression: string,
+  ignoreHashPrefixed = true
 ): string[] | undefined {
   const regex = /\/\*\s*(.*?)\s*\*\//g;
   const names: string[] = [];
   let match;
   while ((match = regex.exec(expression)) !== null) {
     const content = match[1];
-    if (!content.startsWith('#')) {
+    if (!content.startsWith('#') || !ignoreHashPrefixed) {
       names.push(content);
     }
   }

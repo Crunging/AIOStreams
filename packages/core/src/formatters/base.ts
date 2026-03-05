@@ -15,6 +15,7 @@ import {
 import { Env } from '../utils/env.js';
 
 const logger = createLogger('formatter');
+const MAX_TEMPLATE_DEPTH = 5;
 
 /**
  *
@@ -83,7 +84,9 @@ export interface ParseValue {
     encode: string | null;
     audioChannels: string[] | null;
     edition: string | null;
-    remastered: boolean;
+    editions: string[] | null;
+    remastered: null;
+    regraded: boolean;
     repack: boolean;
     uncensored: boolean;
     unrated: boolean;
@@ -108,6 +111,7 @@ export interface ParseValue {
     seasonPack: boolean;
     seeders: number | null;
     private: boolean;
+    freeleech: boolean | null;
     age: string | null;
     ageHours: number | null;
     duration: number | null;
@@ -401,6 +405,7 @@ export abstract class BaseFormatter {
         indexer: stream.indexer || null,
         seeders: stream.torrent?.seeders ?? null,
         private: stream.torrent?.private ?? false,
+        freeleech: stream.torrent?.freeleech ?? null,
         year: stream.parsedFile?.year || null,
         type: stream.type || null,
         title: stream.parsedFile?.title || null,
@@ -423,8 +428,10 @@ export abstract class BaseFormatter {
         ageHours: stream.age || null,
         message: stream.message || null,
         proxied: stream.proxied ?? false,
-        edition: stream.parsedFile?.edition || null,
-        remastered: stream.parsedFile?.remastered ?? false,
+        edition: stream.parsedFile?.editions?.[0] || null,
+        editions: stream.parsedFile?.editions || null,
+        regraded: stream.parsedFile?.regraded ?? false,
+        remastered: null,
         repack: stream.parsedFile?.repack ?? false,
         uncensored: stream.parsedFile?.uncensored ?? false,
         unrated: stream.parsedFile?.unrated ?? false,
@@ -499,7 +506,7 @@ export abstract class BaseFormatter {
   }
 
   protected async compileTemplate(str: string): Promise<CompiledParseFunction> {
-    const compiledHelper = await this.compileTemplateHelper(str);
+    const compiledHelper = await this.compileTemplateHelper(str, 0);
     return (parseValue: ParseValue) => {
       const resultStr = compiledHelper(parseValue);
       // final post-processing of the result string
@@ -515,8 +522,16 @@ export abstract class BaseFormatter {
   }
 
   protected async compileTemplateHelper(
-    str: string
+    str: string,
+    depth: number = 0
   ): Promise<CompiledParseFunction> {
+    if (depth > MAX_TEMPLATE_DEPTH) {
+      logger.warn(
+        `Template nesting depth exceeded (max ${MAX_TEMPLATE_DEPTH}). Returning literal text.`
+      );
+      const literalStr = str;
+      return (_parseValue: ParseValue) => literalStr;
+    }
     const re = this.regexBuilder.buildRegexExpression();
     let matches: RegExpExecArray | null;
 
@@ -624,10 +639,12 @@ export abstract class BaseFormatter {
       // CHECK TRUE/FALSE logic: compile the true/false templates and apply them to the resolved variable
       if (matches.groups.mod_check !== undefined) {
         const check_trueFn = await this.compileTemplateHelper(
-          matches?.groups?.mod_check_true ?? ''
+          matches?.groups?.mod_check_true ?? '',
+          depth + 1
         );
         const check_falseFn = await this.compileTemplateHelper(
-          matches?.groups?.mod_check_false ?? ''
+          matches?.groups?.mod_check_false ?? '',
+          depth + 1
         );
 
         const _compiledResolvedVariableFn = precompiledResolvedVariableFn;
@@ -871,8 +888,28 @@ export abstract class BaseFormatter {
             new RegExp(`${findStartChar}\\s*,\\s*${findEndChar}`)
           );
 
-          if (!shouldBeUndefined && key && replaceKey)
+          if (!shouldBeUndefined && key && replaceKey !== undefined)
             return variable.replaceAll(key, replaceKey);
+        }
+        case mod.startsWith('remove(') && mod.endsWith(')'): {
+          const content = _mod.substring(7, _mod.length - 1);
+
+          // Extract options from remove("...", "...", ...)
+          const regex = /"([^"]*)"|'([^']*)'/g;
+          const args: string[] = [];
+          
+          let match;
+          while ((match = regex.exec(content)) !== null) {
+             args.push(match[1] ?? match[2] ?? '');
+          }
+
+          if (args.length === 0) return undefined;
+          
+          let result = variable;
+          for (const arg of args) {
+             if (arg) result = result.replaceAll(arg, '');
+          }
+          return result;
         }
         case mod.startsWith('truncate(') && mod.endsWith(')'): {
           // Extract N from truncate(N)
@@ -918,6 +955,22 @@ export abstract class BaseFormatter {
           // Extract the separator from join('separator') or join("separator")
           const separator = _mod.substring(6, _mod.length - 2);
           return variable.join(separator);
+        }
+        case mod.startsWith('remove(') && mod.endsWith(')'): {
+          const content = _mod.substring(7, _mod.length - 1);
+
+          // Extract options from remove("...", "...", ...)
+          const regex = /"([^"]*)"|'([^']*)'/g;
+          const args: string[] = [];
+          
+          let match;
+          while ((match = regex.exec(content)) !== null) {
+             args.push(match[1] ?? match[2] ?? '');
+          }
+
+          if (args.length === 0) return undefined;
+
+          return variable.filter((v) => !args.includes(v));
         }
       }
     }
@@ -979,7 +1032,13 @@ class BaseFormatterRegexBuilder {
     const validModifiers = Object.keys(ModifierConstants.modifiers).map((key) =>
       key.replace(/[\(\)\'\"\$\^\~\=\>\<]/g, '\\$&')
     );
-    return `::(${validModifiers.join('|')})`;
+    let pattern = `::(${validModifiers.join('|')})`;
+    // replace .*? so matches can't bleed past quotes, ::, or bracket boundaries
+    // allow embedded quotes (e.g. Director's Cut) — only treat ' as terminator when followed by , ) or whitespace
+    pattern = pattern.replace(/\.\*\?(?=\\')/g, "[^']*(?:'(?![,)\\s])[^']*)*");
+    pattern = pattern.replace(/\.\*\?(?=\\")/g, '[^"]*(?:"(?![,)\\s])[^"]*)*');
+    pattern = pattern.replace(/\.\*\?/g, '(?:(?!::)[^}\\[\\]])*');
+    return pattern;
   }
   /**
    * RegEx Capture Pattern: `::<comparator>::`
@@ -1160,6 +1219,7 @@ class ModifierConstants {
   };
 
   static hardcodedModifiersForRegexMatching = {
+    'remove(.*?)': null,
     "replace('.*?'\\s*?,\\s*?'.*?')": null,
     'replace(".*?"\\s*?,\\s*?\'.*?\')': null,
     'replace(\'.*?\'\\s*?,\\s*?".*?")': null,

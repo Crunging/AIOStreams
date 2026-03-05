@@ -75,6 +75,7 @@ const ResultLimitOptions = z.object({
   streamType: z.number().min(1).optional(),
   indexer: z.number().min(1).optional(),
   releaseGroup: z.number().min(1).optional(),
+  mode: z.enum(['independent', 'conjunctive']).optional(),
 });
 
 // const SizeFilter = z.object({
@@ -144,7 +145,9 @@ const AddonSchema = z.object({
   library: z.boolean().optional(),
   formatPassthrough: z.boolean().optional(),
   resultPassthrough: z.boolean().optional(),
-  forceToTop: z.boolean().optional(),
+  // forceToTop: z.boolean().optional(),
+  pinPosition: z.enum(['top', 'bottom']).optional(),
+  serviceWrapped: z.boolean().optional(),
   headers: z.record(z.string().min(1), z.string().min(1)).optional(),
   ip: z.union([z.ipv4(), z.ipv6()]).optional(),
 });
@@ -194,13 +197,21 @@ const DeduplicatorOptions = z.object({
   live: DeduplicatorMode.optional(),
   youtube: DeduplicatorMode.optional(),
   external: DeduplicatorMode.optional(),
+  smartDetectAttributes: z
+    .array(z.enum(constants.SMART_DETECT_ATTRIBUTES))
+    .optional(),
+  smartDetectRounding: z.number().min(1).max(50).optional(),
+  libraryBehaviour: z
+    .enum(constants.DEDUPLICATOR_LIBRARY_BEHAVIOURS)
+    .optional(),
 });
 
-const OptionDefinition = z.object({
+const OptionDefinition = z.looseObject({
   id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().min(1),
+  name: z.string(),
+  description: z.string(),
   showInSimpleMode: z.boolean().optional(),
+  advanced: z.boolean().optional(),
   emptyIsUndefined: z.boolean().optional(),
   type: z.enum([
     'string',
@@ -354,6 +365,17 @@ export const UserDataSchema = z.object({
   addonLogo: z.string().url().optional(),
   addonBackground: z.string().url().optional(),
   addonDescription: z.string().min(1).optional(),
+  appliedTemplates: z
+    .array(
+      z.object({
+        id: z.string(),
+        version: z.string(),
+        url: z.string().optional(),
+        dismissedVersion: z.string().optional(), // dismissed update notification up to this version
+        ignored: z.boolean().optional(), // permanently ignore all future update notifications
+      })
+    )
+    .optional(),
   excludedResolutions: z.array(Resolutions).optional(),
   includedResolutions: z.array(Resolutions).optional(),
   requiredResolutions: z.array(Resolutions).optional(),
@@ -446,16 +468,36 @@ export const UserDataSchema = z.object({
   excludeUncachedFromStreamTypes: z.array(StreamTypes).optional(),
   excludeUncachedMode: z.enum(['or', 'and']).optional(),
   excludedStreamExpressions: z
-    .array(z.string().min(1).max(Env.MAX_SEL_LENGTH))
+    .array(
+      z.object({
+        expression: z.string().min(1).max(Env.MAX_SEL_LENGTH),
+        enabled: z.boolean().default(true),
+      })
+    )
     .optional(),
   requiredStreamExpressions: z
-    .array(z.string().min(1).max(Env.MAX_SEL_LENGTH))
+    .array(
+      z.object({
+        expression: z.string().min(1).max(Env.MAX_SEL_LENGTH),
+        enabled: z.boolean().default(true),
+      })
+    )
     .optional(),
   preferredStreamExpressions: z
-    .array(z.string().min(1).max(Env.MAX_SEL_LENGTH))
+    .array(
+      z.object({
+        expression: z.string().min(1).max(Env.MAX_SEL_LENGTH),
+        enabled: z.boolean().default(true),
+      })
+    )
     .optional(),
   includedStreamExpressions: z
-    .array(z.string().min(1).max(Env.MAX_SEL_LENGTH))
+    .array(
+      z.object({
+        expression: z.string().min(1).max(Env.MAX_SEL_LENGTH),
+        enabled: z.boolean().default(true),
+      })
+    )
     .optional(),
   rankedStreamExpressions: z
     .array(
@@ -547,7 +589,11 @@ export const UserDataSchema = z.object({
   rpdbApiKey: z.string().optional(),
   // rpdbUseRedirectApi: z.boolean().optional(),
   topPosterApiKey: z.string().optional(),
-  posterService: z.enum(['rpdb', 'top-poster', 'none']).optional(),
+  aioratingsApiKey: z.string().optional(),
+  aioratingsProfileId: z.string().optional(),
+  posterService: z
+    .enum(['rpdb', 'top-poster', 'aioratings', 'none'])
+    .optional(),
   usePosterRedirectApi: z.boolean().optional(),
   usePosterServiceForMeta: z.boolean().optional(),
   formatter: Formatter,
@@ -574,6 +620,7 @@ export const UserDataSchema = z.object({
       enabled: z.boolean().optional(),
       tolerance: z.number().min(0).max(100).optional(),
       strict: z.boolean().optional(),
+      useInitialAirDate: z.boolean().optional(),
       requestTypes: z.array(z.string()).optional(),
       addons: z.array(z.string()).optional(),
     })
@@ -616,8 +663,18 @@ export const UserDataSchema = z.object({
   /** @deprecated Use precacheSelector instead */
   alwaysPrecache: z.boolean().optional(),
   /** @deprecated Use precacheSelector instead */
-  precacheCondition: z.string().optional(),
-  precacheSelector: z.string().optional(),
+  precacheCondition: z.string().min(1).max(Env.MAX_SEL_LENGTH).optional(),
+  precacheSelector: z.string().min(1).max(Env.MAX_SEL_LENGTH).optional(),
+  /** When false, all streams returned by precacheSelector are pinged; defaults to true (first stream only). */
+  precacheSingleStream: z.boolean().optional(),
+  preloadStreams: z
+    .object({
+      enabled: z.boolean().optional(),
+      selector: z.string().min(1).max(Env.MAX_SEL_LENGTH).optional(),
+      /** When false, all streams returned by selector are pinged; defaults to true (first stream only). */
+      singleStream: z.boolean().optional(),
+    })
+    .optional(),
   services: ServiceList.optional(),
   presets: PresetList,
   catalogModifications: z.array(CatalogModification).optional(),
@@ -626,6 +683,26 @@ export const UserDataSchema = z.object({
   cacheAndPlay: CacheAndPlaySchema.optional(),
 
   autoRemoveDownloads: z.boolean().optional(),
+  checkOwned: z.boolean().optional().default(true),
+  nzbFailover: z
+    .object({
+      enabled: z.boolean().optional(),
+      count: z.number().min(1).optional(),
+      position: z.enum(['beforeLimiting', 'beforeSEL', 'last']).optional(),
+    })
+    .optional(),
+  serviceWrap: z
+    .object({
+      enabled: z.boolean().optional(),
+      /** Preset instanceIds to wrap — if empty/absent, all P2P-capable presets are wrapped */
+      presets: z.array(z.string().min(1)).optional(),
+      /** Which debrid services to use for processing wrapped P2P torrents — if absent, uses all enabled */
+      services: z.array(ServiceIds).optional(),
+      /** Re-process debrid results from external addons that include torrent info hashes through
+       *  additional/different debrid services. Only applies to addons selected in the wrap addons list. */
+      reconfigureService: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export type UserData = z.infer<typeof UserDataSchema>;
@@ -815,9 +892,8 @@ export const ParsedFileSchema = z.object({
   folderSeasons: z.array(z.number()).optional(),
   folderEpisodes: z.array(z.number()).optional(),
   episodes: z.array(z.number()).optional(),
-  // seasonEpisode: z.array(z.string()).optional(),
-  edition: z.string().optional(),
-  remastered: z.boolean().optional(),
+  editions: z.array(z.string()).optional(),
+  regraded: z.boolean().optional(),
   repack: z.boolean().optional(),
   uncensored: z.boolean().optional(),
   unrated: z.boolean().optional(),
@@ -859,7 +935,8 @@ export const ParsedStreamSchema = z.object({
   folderSize: z.number().optional(),
   type: StreamTypes,
   indexer: z.string().optional(),
-  age: z.number().optional(), // Age in hours since upload
+  /**Age in hours since upload */
+  age: z.number().optional(),
   torrent: z
     .object({
       infoHash: z.string().min(1).optional(),
@@ -867,6 +944,7 @@ export const ParsedStreamSchema = z.object({
       seeders: z.number().optional(),
       sources: z.array(z.string().min(1)).optional(),
       private: z.boolean().optional(),
+      freeleech: z.boolean().optional(),
     })
     .optional(),
   countryWhitelist: z.array(z.string().length(3)).optional(),
@@ -912,6 +990,7 @@ export const ParsedStreamSchema = z.object({
     .optional(),
   originalName: z.string().optional(),
   originalDescription: z.string().optional(),
+  extra: z.record(z.string(), z.any()).optional(),
 });
 
 export type ParsedFile = z.infer<typeof ParsedFileSchema>;
@@ -1098,6 +1177,7 @@ export const AIOStream = StreamSchema.extend({
       type: StreamTypes.optional(),
       indexer: z.string().optional(),
       age: z.number().or(z.string()).optional(), // Age in hours since upload
+      nzbUrl: z.string().or(z.null()).optional(),
       torrent: z
         .object({
           infoHash: z.string().min(1).optional(),
@@ -1126,7 +1206,6 @@ const PresetMinimalMetadataSchema = z.object({
   NAME: z.string(),
   LOGO: z.string().optional(),
   DESCRIPTION: z.string(),
-  URL: z.string(),
   DISABLED: z
     .object({
       reason: z.string(),
@@ -1143,6 +1222,7 @@ const PresetMinimalMetadataSchema = z.object({
 });
 
 const PresetMetadataSchema = PresetMinimalMetadataSchema.extend({
+  URL: z.string(),
   TIMEOUT: z.number(),
   USER_AGENT: z.string(),
 });
@@ -1150,6 +1230,7 @@ const PresetMetadataSchema = PresetMinimalMetadataSchema.extend({
 const StatusResponseSchema = z.object({
   version: z.string(),
   tag: z.string(),
+  channel: z.enum(['stable', 'nightly', 'dev']),
   commit: z.string(),
   buildTime: z.string(),
   commitTime: z.string(),
@@ -1158,18 +1239,19 @@ const StatusResponseSchema = z.object({
     baseUrl: z.string().url().optional(),
     addonName: z.string(),
     customHtml: z.string().optional(),
+    featuredTemplateIds: z.array(z.string()).optional(),
     alternateDesign: z.boolean(),
     protected: z.boolean(),
-    regexFilterAccess: z.enum(['none', 'trusted', 'all']),
-    selSyncAccess: z.enum(['all', 'trusted']),
-    whitelistedSelUrls: z.array(z.string()).optional(),
-    allowedRegexPatterns: z
-      .object({
-        patterns: z.array(z.string()),
-        description: z.string().optional(),
-        urls: z.array(z.string()).optional(),
-      })
-      .optional(),
+    regexAccess: z.object({
+      level: z.enum(['none', 'trusted', 'all']),
+      patterns: z.array(z.string()),
+      urls: z.array(z.string()),
+      description: z.string().optional(),
+    }),
+    selSyncAccess: z.object({
+      level: z.enum(['all', 'trusted']),
+      trustedUrls: z.array(z.string()).optional(),
+    }),
     loggingSensitiveInfo: z.boolean(),
     tmdbApiAvailable: z.boolean(),
     forced: z.object({
@@ -1213,6 +1295,8 @@ const StatusResponseSchema = z.object({
       maxStreamExpressions: z.number(),
       maxStreamExpressionsTotalCharacters: z.number(),
       maxAddons: z.number(),
+      maxNzbFailoverCount: z.number(),
+      maxBackgroundPings: z.number(),
     }),
   }),
 });
@@ -1230,6 +1314,13 @@ export const TopPosterIsValidResponse = z.object({
   valid: z.boolean(),
 });
 export type TopPosterIsValidResponse = z.infer<typeof TopPosterIsValidResponse>;
+
+export const AIOratingsIsValidResponse = z.object({
+  valid: z.boolean(),
+});
+export type AIOratingsIsValidResponse = z.infer<
+  typeof AIOratingsIsValidResponse
+>;
 
 export const TemplateSchema = z.object({
   metadata: z.object({
@@ -1255,8 +1346,19 @@ export const TemplateSchema = z.object({
     serviceRequired: z.boolean().optional(), // whether a service is required for this template or not.
     setToSaveInstallMenu: z.boolean().optional().default(true), // whether to set the menu to save-install after importing the template
     sourceUrl: z.url().optional(), // URL from which the template was imported (for auto-updates)
+    inputs: z.array(OptionDefinition).optional(), // template-creator-defined options shown to the user before loading
+    changelog: z
+      .array(
+        z.object({
+          date: z.string(),
+          version: z.string(),
+          content: z.string(),
+        })
+      )
+      .optional(), // version history entries for tracking updates applied by users
+    changelogUrl: z.url().optional(), // URL to a remote CHANGELOG.md file (alternative to inline changelog)
   }),
-  config: UserDataSchema.partial(),
+  config: z.any(),
 });
 
 export type Template = z.infer<typeof TemplateSchema>;
