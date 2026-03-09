@@ -332,13 +332,12 @@ async function processTorrentsForDebridService(
     }
   }
 
-  // Parse all file strings in one call
-  const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
-  );
+  // Parse file strings with deduplication
   const parsedFiles = new Map<string, ParsedResult>();
-  for (const [index, result] of allParsedFiles.entries()) {
-    parsedFiles.set(allFileStrings[index], result);
+  for (const string of allFileStrings) {
+    if (!parsedFiles.has(string)) {
+      parsedFiles.set(string, parseTorrentTitle(string));
+    }
   }
 
   for (const [title, parsed] of parsedTitlesMap.entries()) {
@@ -453,12 +452,11 @@ export async function processTorrentsForP2P(
     }
   }
 
-  const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
-  );
   const parsedFiles = new Map<string, ParsedResult>();
-  for (const [index, result] of allParsedFiles.entries()) {
-    parsedFiles.set(allFileStrings[index], result);
+  for (const string of allFileStrings) {
+    if (!parsedFiles.has(string)) {
+      parsedFiles.set(string, parseTorrentTitle(string));
+    }
   }
 
   for (const { torrent } of validTorrents) {
@@ -702,12 +700,11 @@ async function processNZBsForDebridService(
     }
   }
 
-  const allParsedFiles: ParsedResult[] = allFileStrings.map((string) =>
-    parseTorrentTitle(string)
-  );
   const parsedFiles = new Map<string, ParsedResult>();
-  for (const [index, result] of allParsedFiles.entries()) {
-    parsedFiles.set(allFileStrings[index], result);
+  for (const string of allFileStrings) {
+    if (!parsedFiles.has(string)) {
+      parsedFiles.set(string, parseTorrentTitle(string));
+    }
   }
 
   for (const [title, parsed] of parsedTitlesMap.entries()) {
