@@ -215,6 +215,15 @@ export const FULL_LANGUAGE_MAPPING = [
     name: "Finu' Chamorro",
   },
   {
+    iso_639_1: 'cn',
+    iso_639_2: 'yue',
+    iso_3166_1: 'HK',
+    flag: '🇭🇰',
+    english_name: 'Cantonese',
+    internal_english_name: 'Chinese',
+    name: '广州话 / 廣州話',
+  },
+  {
     iso_639_1: 'co',
     iso_639_2: 'cos',
     iso_3166_1: 'FR',
@@ -979,6 +988,7 @@ export const FULL_LANGUAGE_MAPPING = [
     iso_3166_1: 'NO',
     flag: '🇳🇴',
     english_name: 'Bokmål, Norwegian; Norwegian Bokmål',
+    internal_english_name: 'Norwegian',
     name: 'Bokmål',
   },
   {
@@ -1020,6 +1030,7 @@ export const FULL_LANGUAGE_MAPPING = [
     iso_3166_1: 'NO',
     flag: '🇳🇴',
     english_name: 'Norwegian Nynorsk; Nynorsk, Norwegian',
+    internal_english_name: 'Norwegian',
     name: 'Nynorsk',
   },
   {
@@ -1105,6 +1116,7 @@ export const FULL_LANGUAGE_MAPPING = [
     iso_3166_1: 'IN',
     flag: '🇮🇳',
     english_name: 'Panjabi; Punjabi',
+    internal_english_name: 'Punjabi',
     name: 'ਪੰਜਾਬੀ',
   },
   {
