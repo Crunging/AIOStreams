@@ -720,80 +720,93 @@ export const VIDEO_FILE_EXTENSIONS = [
   '.m2ts',
 ];
 
+// Pre-computed Sets for O(1) extension lookups instead of O(N) .some() scans
+const VIDEO_EXTENSIONS_SET = new Set(VIDEO_FILE_EXTENSIONS);
+
+const NON_VIDEO_EXTENSIONS = [
+  '.txt',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.svg',
+  '.webp',
+  '.nfo',
+  '.sfv',
+  '.srt',
+  '.ass',
+  '.sub',
+  '.idx',
+  '.cue',
+  '.log',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.pdf',
+  '.rtf',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.csv',
+  '.tsv',
+  '.exe',
+  '.bat',
+  '.apk',
+  '.dll',
+  '.zip',
+  '.rar',
+  '.7z',
+  '.tar',
+  '.gz',
+  '.bz2',
+  '.xz',
+  '.md',
+  '.json',
+  '.xml',
+  '.ini',
+  '.dat',
+  '.db',
+  '.dbf',
+  '.bak',
+  '.par2',
+  '.clpi',
+  '.jar',
+  '.mpls',
+  '.otf',
+  '.properties',
+  '.bdjo',
+  '.bdmv',
+  '.crt',
+  '.crl',
+  '.sig',
+];
+const NON_VIDEO_EXTENSIONS_SET = new Set(NON_VIDEO_EXTENSIONS);
+const SPLIT_ARCHIVE_PATTERN = /\.7z\.\d+$/;
+
+/** Extract the file extension (including the dot) from a filename. */
+function getFileExtension(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot).toLowerCase() : '';
+}
+
 export function isVideoFile(file: DebridFile): boolean {
   return (
     file.mimeType?.includes('video') ||
-    VIDEO_FILE_EXTENSIONS.some((ext) => file.name?.endsWith(ext) ?? false)
+    (file.name ? VIDEO_EXTENSIONS_SET.has(getFileExtension(file.name)) : false)
   );
 }
 
 export function isNotVideoFile(file: DebridFile): boolean {
-  const nonVideoExtensions = [
-    '.txt',
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.gif',
-    '.bmp',
-    '.svg',
-    '.webp',
-    '.nfo',
-    '.sfv',
-    '.srt',
-    '.ass',
-    '.sub',
-    '.idx',
-    '.cue',
-    '.log',
-    '.doc',
-    '.docx',
-    '.xls',
-    '.xlsx',
-    '.ppt',
-    '.pptx',
-    '.pdf',
-    '.rtf',
-    '.odt',
-    '.ods',
-    '.odp',
-    '.csv',
-    '.tsv',
-    '.exe',
-    '.bat',
-    '.apk',
-    '.dll',
-    '.zip',
-    '.rar',
-    '.7z',
-    '.tar',
-    '.gz',
-    '.bz2',
-    '.xz',
-    '.md',
-    '.json',
-    '.xml',
-    '.ini',
-    '.dat',
-    '.db',
-    '.dbf',
-    '.bak',
-    '.par2',
-    '.clpi',
-    '.jar',
-    '.mpls',
-    '.otf',
-    '.properties',
-    '.bdjo',
-    '.bdmv',
-    '.crt',
-    '.crl',
-    '.sig',
-  ];
-  const patterns = [/\.7z\.\d+$/];
   return (
-    (file.mimeType && !file.mimeType.includes('video')) ||
-    nonVideoExtensions.some((ext) => file.name?.endsWith(ext) ?? false) ||
-    patterns.some((pattern) => pattern.test(file.name || ''))
+    (file.mimeType != null && !file.mimeType.includes('video')) ||
+    (file.name
+      ? NON_VIDEO_EXTENSIONS_SET.has(getFileExtension(file.name)) ||
+        SPLIT_ARCHIVE_PATTERN.test(file.name)
+      : false)
   );
 }
 
