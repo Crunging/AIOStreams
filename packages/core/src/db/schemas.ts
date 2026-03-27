@@ -158,6 +158,7 @@ const PresetSchema = z.object({
   instanceId: z.string().min(1), // uniquely identifies the preset in a given list of presets
   enabled: z.boolean(),
   options: z.record(z.string().min(1), z.any()),
+  category: z.string().optional(), // user-defined category for organising addons in the UI
 });
 
 export type PresetObject = z.infer<typeof PresetSchema>;
@@ -263,6 +264,10 @@ const OptionDefinition = z.looseObject({
       'alert-basic',
     ])
     .optional(),
+  subsectionIntent: z
+    .enum(['default', 'block', 'inline', 'pill', 'link', 'banner'])
+    .optional(),
+  buttonIntent: z.string().optional(),
   socials: z
     .array(
       z.object({
@@ -677,6 +682,7 @@ export const UserDataSchema = z.object({
     .optional(),
   services: ServiceList.optional(),
   presets: PresetList,
+  addonCategoryColors: z.record(z.string(), z.string()).optional(), // maps custom category name → colour key
   catalogModifications: z.array(CatalogModification).optional(),
   mergedCatalogs: z.array(MergedCatalog).optional(),
   externalDownloads: z.boolean().optional(),
@@ -885,6 +891,7 @@ export const ParsedFileSchema = z.object({
   visualTags: z.array(z.string()),
   audioTags: z.array(z.string()),
   languages: z.array(z.string()),
+  subtitles: z.array(z.string()).optional(),
   subbed: z.boolean().optional(),
   dubbed: z.boolean().optional(),
   title: z.string().optional(),
@@ -965,7 +972,9 @@ export const ParsedStreamSchema = z.object({
       cached: z.boolean(),
     })
     .optional(),
+  /**Duration in milliseconds */
   duration: z.number().optional(),
+  /**Bitrate in bps */
   bitrate: z.number().optional(),
   library: z.boolean().optional(),
   seadex: z

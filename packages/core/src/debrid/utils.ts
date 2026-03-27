@@ -8,6 +8,7 @@ import {
   getSimpleTextHash,
   encryptString,
   toUrlSafeBase64,
+  ParsedMediaInfo,
 } from '../utils/index.js';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -136,7 +137,7 @@ interface BaseFile {
   indexer?: string;
   seeders?: number;
   group?: string;
-  languages?: string[]; // languages extracted from indexer attributes (e.g. newznab/torznab)
+  parsedMediaInfo?: ParsedMediaInfo;
   age?: number; // age in hours
   downloadvolumefactor?: number; // multiplier for the download volume that counts toward the user’s account on the tracker
   duration?: number; // duration in seconds
@@ -158,6 +159,8 @@ export interface UnprocessedTorrent extends BaseFile {
   hash?: string;
   downloadUrl?: string;
   sources: string[];
+  private?: boolean;
+  serviceItemId?: string;
 }
 
 export interface NZB extends BaseFile {
@@ -166,6 +169,7 @@ export interface NZB extends BaseFile {
   nzb: string;
   easynewsUrl?: string;
   zyclopsHealth?: string;
+  serviceItemId?: string;
 }
 
 export interface TorrentWithSelectedFile extends Torrent {
@@ -175,6 +179,7 @@ export interface TorrentWithSelectedFile extends Torrent {
     cached: boolean;
     library: boolean;
   };
+  serviceItemId?: string;
 }
 
 export interface NZBWithSelectedFile extends NZB {
@@ -184,6 +189,7 @@ export interface NZBWithSelectedFile extends NZB {
     cached: boolean;
     library: boolean;
   };
+  serviceItemId?: string;
 }
 
 interface SelectionOptions {

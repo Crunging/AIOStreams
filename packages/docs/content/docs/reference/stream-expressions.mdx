@@ -1,4 +1,4 @@
-﻿---
+---
 title: Stream Expression Language
 description: Complete technical reference for SEL syntax, operators, constants, and all functions.
 ---
@@ -186,10 +186,11 @@ Groups streams by an attribute, keeps up to **`n`** streams from each group, the
 | `audioTag`     | Audio format tag (`Atmos`, `DTS-HD MA`, …)     |
 | `audioChannel` | Audio channel layout (`5.1`, `7.1`, …)         |
 | `language`     | Audio language (`English`, `Japanese`, …)      |
+| `subtitle`     | Subtitle language (`English`, `Japanese`, …)   |
 
 Streams with no value for the chosen attribute are bucketed under `'Unknown'` (or `'none'` for `service`).
 
-For multi-value attributes (`visualTag`, `audioTag`, `audioChannel`, `language`) a stream is assigned to the **first** group key that matches the `filterValues` list, or to its first value when no filter is specified. A stream is never included more than once in the output.
+For multi-value attributes (`visualTag`, `audioTag`, `audioChannel`, `language`, `subtitle`) a stream is assigned to the **first** group key that matches the `filterValues` list, or to its first value when no filter is specified. A stream is never included more than once in the output.
 
 **How interleaving works:**
 
@@ -336,6 +337,17 @@ language(streams, 'English')
 
 ---
 
+#### `subtitle()` / `subtitles()`
+
+Filter by subtitle language (e.g. `'English'`, `'Spanish'`).
+
+```
+subtitle(streams, 'English')
+subtitles(streams, 'English')
+```
+
+---
+
 #### `seeders()`
 
 Filter by torrent seeder count.
@@ -404,7 +416,7 @@ bitrate(streams, '5Mbps')
 
 Filter by Debrid service.
 
-**Accepted values:** `'realdebrid'` `'debridlink'` `'alldebrid'` `'torbox'` `'pikpak'` `'seedr'` `'offcloud'` `'premiumize'` `'easynews'` `'easydebrid'`
+**Accepted values:** `'realdebrid'` `'debridlink'` `'alldebrid'` `'torbox'` `'pikpak'` `'seedr'` `'offcloud'` `'premiumize'` `'easynews'` `'nzbdav'` `'altmount'` `'stremio_nntp'` `'easydebrid'` `'debrider'`
 
 ```
 service(streams, 'realdebrid', 'torbox')
@@ -539,7 +551,11 @@ regexMatched(streams, 'HighQuality', 'Extras') // matched specific ones
 
 Filter for streams where the matched regex filter's index is within `[min, max]`.
 
-<Callout type="warn">Does not work in **Included Stream Expressions**.</Callout>
+<Callout type="warn">
+  Does not work in **Included Stream Expressions**. This only uses
+  `stream.regexMatched` (preferred regex result), so it does **not** work with
+  ranked regex matches.
+</Callout>
 
 ```
 regexMatchedInRange(streams, 0, 5)
@@ -547,7 +563,55 @@ regexMatchedInRange(streams, 0, 5)
 
 ---
 
-#### `streamExpressionScore()`
+#### `seMatched()`
+
+Filter for streams that matched a preferred Stream Expression.
+
+| Parameter  | Type             | Description                                                              |
+| ---------- | ---------------- | ------------------------------------------------------------------------ |
+| `streams`  | `ParsedStream[]` | Stream list                                                              |
+| `...names` | `string?`        | Optional expression names. If omitted, matches any preferred expression. |
+
+```
+seMatched(streams)                    // matched any preferred expression
+seMatched(streams, '4K', 'Anime HQ') // matched specific expression names
+```
+
+---
+
+#### `seMatchedInRange()`
+
+Filter for streams where the matched preferred Stream Expression index is within `[min, max]`.
+
+<Callout type="warn">
+  Does not work in **Included Stream Expressions**. This only uses
+  `stream.streamExpressionMatched` (preferred Stream Expression result), so it
+  does **not** work with ranked stream expressions.
+</Callout>
+
+```
+seMatchedInRange(streams, 0, 3)
+```
+
+---
+
+#### `rseMatched()`
+
+Filter for streams that matched one or more ranked Stream Expressions.
+
+| Parameter  | Type             | Description                                                           |
+| ---------- | ---------------- | --------------------------------------------------------------------- |
+| `streams`  | `ParsedStream[]` | Stream list                                                           |
+| `...names` | `string?`        | Optional ranked expression names. If omitted, matches any ranked hit. |
+
+```
+rseMatched(streams)                    // matched any ranked expression
+rseMatched(streams, 'BD T1', 'Web T1') // matched specific ranked names
+```
+
+---
+
+#### `streamExpressionScore()` / `seScore()`
 
 Filter by Ranked Stream Expression score.
 

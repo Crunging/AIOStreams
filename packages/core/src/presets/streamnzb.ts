@@ -18,24 +18,23 @@ class StreamNZBStreamParser extends StreamParser {
     return { failoverId };
   }
 
+  protected getMessage(
+    stream: Stream,
+    _currentParsedStream: ParsedStream
+  ): string | undefined {
+    const cached = (stream.behaviorHints as { cached?: boolean } | undefined)
+      ?.cached;
+    if (cached === true) return 'AvailNZB 💚';
+  }
+
   protected override getService(
     stream: Stream,
     currentParsedStream: ParsedStream
   ): ParsedStream['service'] | undefined {
     const base = super.getService(stream, currentParsedStream);
-    const cached = (stream.behaviorHints as { cached?: boolean } | undefined)
-      ?.cached;
-    if (cached === true) {
-      return base
-        ? { ...base, cached: true }
-        : { id: constants.STREMIO_NNTP_SERVICE, cached: true };
-    }
-    if (cached === false) {
-      return base
-        ? { ...base, cached: false }
-        : { id: constants.STREMIO_NNTP_SERVICE, cached: false };
-    }
-    return base;
+    return base
+      ? { ...base, cached: true }
+      : { id: constants.STREMIO_NNTP_SERVICE, cached: true };
   }
 
   protected getStreamType(
@@ -62,9 +61,9 @@ export class StreamNZBPreset extends Preset {
       ).filter((option) => option.id !== 'url'),
       {
         id: 'url',
-        name: 'Instance URL',
+        name: 'Manifest URL',
         description:
-          'Base URL of your StreamNZB instance (e.g. https://streamnzb.example.com)',
+          'Manifest URL to your StreamNZB instance',
         type: 'url',
         required: true,
       },
@@ -91,7 +90,7 @@ export class StreamNZBPreset extends Preset {
       USER_AGENT: 'AIOStreams',
       SUPPORTED_SERVICES: [],
       DESCRIPTION:
-        'Stream via nntp without any additional services, availability checks, failover supports aiostreams builtins.',
+        'Stream via nntp without any additional services.',
       OPTIONS: options,
       SUPPORTED_STREAM_TYPES: [constants.USENET_STREAM_TYPE],
       SUPPORTED_RESOURCES: supportedResources,
