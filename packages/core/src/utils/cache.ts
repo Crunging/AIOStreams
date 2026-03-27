@@ -259,6 +259,15 @@ export class Cache<K, V> {
   }
 
   /**
+   * Get multiple values from the cache in a single batch operation.
+   * For Redis, this uses MGET (single round-trip) instead of N individual GETs.
+   * @param keys The keys to retrieve
+   */
+  async getMany(keys: K[]): Promise<Map<K, V | undefined>> {
+    return this.backend.getMany(keys);
+  }
+
+  /**
    * Set a value in the cache with a specific TTL
    * @param key The key to set the value for
    * @param value The value to set

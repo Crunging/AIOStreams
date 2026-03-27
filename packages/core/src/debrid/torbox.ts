@@ -205,14 +205,18 @@ export class TorboxDebridService
     }
     const cachedResults: DebridDownload[] = [];
     const hashesToCheck: string[] = [];
-    for (const { hash } of nzbs as { hash: string }[]) {
-      const cacheKey = getSimpleTextHash(hash);
-      const cached =
-        await TorboxDebridService.instantAvailabilityCache.get(cacheKey);
+
+    // Batch-fetch all cache entries in a single operation (1 MGET for Redis)
+    const nzbHashes = (nzbs as { hash: string }[]).map((n) => n.hash);
+    const cacheKeys = nzbHashes.map((hash) => getSimpleTextHash(hash));
+    const cacheHits =
+      await TorboxDebridService.instantAvailabilityCache.getMany(cacheKeys);
+    for (let i = 0; i < nzbHashes.length; i++) {
+      const cached = cacheHits.get(cacheKeys[i]);
       if (cached) {
         cachedResults.push(cached);
       } else {
-        hashesToCheck.push(hash);
+        hashesToCheck.push(nzbHashes[i]);
       }
     }
 

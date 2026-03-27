@@ -136,6 +136,25 @@ export class StremThruService
     );
   }
 
+  /**
+   * Batch-fetch multiple hashes from the check cache in a single operation.
+   * For Redis, this uses MGET (1 round-trip) instead of N individual GETs.
+   */
+  private async checkCacheGetMany(
+    hashes: string[]
+  ): Promise<Map<string, DebridDownload | undefined>> {
+    const keys = hashes.map(
+      (hash) => `${this.serviceName}:${getSimpleTextHash(hash)}`
+    );
+    const cacheResults = await StremThruService.checkCache.getMany(keys);
+    // Re-map from cache keys back to the original hashes
+    const result = new Map<string, DebridDownload | undefined>();
+    for (let i = 0; i < hashes.length; i++) {
+      result.set(hashes[i], cacheResults.get(keys[i]));
+    }
+    return result;
+  }
+
   private async checkCacheSet(debridDownload: DebridDownload): Promise<void> {
     try {
       await StremThruService.checkCache.set(
@@ -288,8 +307,11 @@ export class StremThruService
     const cachedResults: DebridDownload[] = [];
     let newResults: DebridDownload[] = [];
     const magnetsToCheck: string[] = [];
+
+    // Batch-fetch all cache entries in a single operation (1 MGET for Redis)
+    const cacheHits = await this.checkCacheGetMany(magnets);
     for (const magnet of magnets) {
-      const cached = await this.checkCacheGet(magnet);
+      const cached = cacheHits.get(magnet);
       if (cached) {
         cachedResults.push(cached);
       } else {
@@ -522,8 +544,11 @@ export class StremThruService
     const cachedResults: DebridDownload[] = [];
     const hashesToCheck: string[] = [];
 
-    for (const { hash } of nzbs as { hash: string }[]) {
-      const cached = await this.checkCacheGet(hash);
+    // Batch-fetch all cache entries in a single operation (1 MGET for Redis)
+    const nzbHashes = (nzbs as { hash: string }[]).map((n) => n.hash);
+    const cacheHits = await this.checkCacheGetMany(nzbHashes);
+    for (const hash of nzbHashes) {
+      const cached = cacheHits.get(hash);
       if (cached) {
         cachedResults.push(cached);
       } else {

@@ -11,6 +11,7 @@ const REDIS_TIMEOUT = Env.REDIS_TIMEOUT;
 // Interface that both memory and Redis cache will implement
 export interface CacheBackend<K, V> {
   get(key: K, updateTTL?: boolean): Promise<V | undefined>;
+  getMany(keys: K[]): Promise<Map<K, V | undefined>>;
   set(key: K, value: V, ttl: number, forceWrite?: boolean): Promise<void>;
   flush(): Promise<void>;
   delete(key: K): Promise<boolean>;
@@ -46,6 +47,14 @@ export class MemoryCacheBackend<K, V> implements CacheBackend<K, V> {
       return structuredClone(item.value);
     }
     return undefined;
+  }
+
+  async getMany(keys: K[]): Promise<Map<K, V | undefined>> {
+    const result = new Map<K, V | undefined>();
+    for (const key of keys) {
+      result.set(key, await this.get(key));
+    }
+    return result;
   }
 
   async set(
@@ -203,6 +212,30 @@ export class RedisCacheBackend<K, V> implements CacheBackend<K, V> {
         timeout: this.timeout,
         shouldProceed: () => this.client.isOpen,
         getContext: () => `getting key ${String(key)} from Redis`,
+      }
+    );
+  }
+
+  async getMany(keys: K[]): Promise<Map<K, V | undefined>> {
+    if (keys.length === 0) return new Map();
+
+    const redisKeys = keys.map((k) => this.getKey(k));
+
+    return withTimeout(
+      async () => {
+        const values = await this.client.mGet(redisKeys);
+        const result = new Map<K, V | undefined>();
+        for (let i = 0; i < keys.length; i++) {
+          const raw = values[i];
+          result.set(keys[i], raw ? (JSON.parse(raw) as V) : undefined);
+        }
+        return result;
+      },
+      new Map<K, V | undefined>(),
+      {
+        timeout: this.timeout,
+        shouldProceed: () => this.client.isOpen,
+        getContext: () => `getting ${keys.length} keys from Redis via MGET`,
       }
     );
   }
@@ -545,6 +578,81 @@ export class SQLCacheBackend<K, V> implements CacheBackend<K, V> {
       logger.error(`Error getting key ${String(key)} from SQL cache: ${err}`);
       return undefined;
     }
+  }
+
+  async getMany(keys: K[]): Promise<Map<K, V | undefined>> {
+    if (keys.length === 0) return new Map();
+
+    const sqlKeys = keys.map((k) => this.getKey(k));
+    const now = Date.now();
+    const result = new Map<K, V | undefined>();
+
+    try {
+      const placeholders = sqlKeys.map(() => '?').join(', ');
+      const rows = await this.db.query(
+        `SELECT key, value, expires_at FROM cache WHERE key IN (${placeholders})`,
+        sqlKeys
+      );
+
+      const rowMap = new Map<string, { value: string; expires_at: number }>();
+      for (const row of rows) {
+        rowMap.set(row.key, row);
+      }
+
+      const expiredKeys: string[] = [];
+      const validKeys: string[] = [];
+
+      for (let i = 0; i < keys.length; i++) {
+        const row = rowMap.get(sqlKeys[i]);
+        if (!row) {
+          result.set(keys[i], undefined);
+        } else if (now > row.expires_at) {
+          expiredKeys.push(sqlKeys[i]);
+          result.set(keys[i], undefined);
+        } else {
+          validKeys.push(sqlKeys[i]);
+          result.set(keys[i], JSON.parse(row.value) as V);
+        }
+      }
+
+      // Batch-delete expired entries
+      if (expiredKeys.length > 0) {
+        const delPlaceholders = expiredKeys.map(() => '?').join(', ');
+        this.db
+          .execute(
+            `DELETE FROM cache WHERE key IN (${delPlaceholders})`,
+            expiredKeys
+          )
+          .catch((err) =>
+            logger.error(`Error deleting expired keys from SQL cache: ${err}`)
+          );
+      }
+
+      // Batch-update last_accessed for valid entries
+      if (validKeys.length > 0) {
+        const updPlaceholders = validKeys.map(() => '?').join(', ');
+        const timestampFunc = this.db.isSQLite()
+          ? 'CURRENT_TIMESTAMP'
+          : 'NOW()';
+        this.db
+          .execute(
+            `UPDATE cache SET last_accessed = ${timestampFunc} WHERE key IN (${updPlaceholders})`,
+            validKeys
+          )
+          .catch((err) =>
+            logger.error(
+              `Error updating last_accessed in SQL cache: ${err}`
+            )
+          );
+      }
+    } catch (err) {
+      logger.error(`Error getting ${keys.length} keys from SQL cache: ${err}`);
+      for (const key of keys) {
+        result.set(key, undefined);
+      }
+    }
+
+    return result;
   }
 
   async set(
