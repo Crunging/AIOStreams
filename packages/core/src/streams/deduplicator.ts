@@ -10,6 +10,13 @@ import StreamUtils, { shouldPassthroughStage } from './utils.js';
 
 const logger = createLogger('deduplicator');
 
+// Pre-compiled regexes for filename normalization in deduplication.
+// Hoisted to module scope to avoid recompilation per-stream.
+const DEDUP_EXTENSION_REGEX =
+  /(mkv|mp4|avi|mov|wmv|flv|webm|m4v|mpg|mpeg|3gp|3g2|m2ts|ts|vob|ogv|ogm|divx|xvid|rm|rmvb|asf|mxf|mka|mks|mk3d|webm|f4v|f4p|f4a|f4b)$/i;
+const DEDUP_NON_ALNUM_REGEX = /[^\p{L}\p{N}+]/gu;
+const DEDUP_WHITESPACE_REGEX = /\s+/g;
+
 class StreamDeduplicator {
   private userData: UserData;
 
@@ -69,12 +76,9 @@ class StreamDeduplicator {
 
       if (deduplicationKeys.includes('filename') && stream.filename) {
         let normalisedFilename = stream.filename
-          .replace(
-            /(mkv|mp4|avi|mov|wmv|flv|webm|m4v|mpg|mpeg|3gp|3g2|m2ts|ts|vob|ogv|ogm|divx|xvid|rm|rmvb|asf|mxf|mka|mks|mk3d|webm|f4v|f4p|f4a|f4b)$/i,
-            ''
-          )
-          .replace(/[^\p{L}\p{N}+]/gu, '')
-          .replace(/\s+/g, '')
+          .replace(DEDUP_EXTENSION_REGEX, '')
+          .replace(DEDUP_NON_ALNUM_REGEX, '')
+          .replace(DEDUP_WHITESPACE_REGEX, '')
           .toLowerCase();
         currentStreamKeyStrings.push(`filename:${normalisedFilename}`);
       }
