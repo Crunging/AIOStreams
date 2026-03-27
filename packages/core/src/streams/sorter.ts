@@ -72,6 +72,27 @@ class StreamSorter {
 
     let sortedStreams = [];
 
+    // Pre-compute sort keys once per stream to avoid recomputing them
+    // O(N log N) times inside the sort comparator.
+    const precomputeAndSort = (
+      streamList: ParsedStream[],
+      criteria: SortCriterion[]
+    ): ParsedStream[] => {
+      const keyMap = new Map<string, any[]>();
+      for (const stream of streamList) {
+        keyMap.set(stream.id, this.dynamicSortKey(stream, criteria, type));
+      }
+      return streamList.slice().sort((a, b) => {
+        const aKey = keyMap.get(a.id)!;
+        const bKey = keyMap.get(b.id)!;
+        for (let i = 0; i < aKey.length; i++) {
+          if (aKey[i] < bKey[i]) return -1;
+          if (aKey[i] > bKey[i]) return 1;
+        }
+        return 0;
+      });
+    };
+
     if (
       cachedSortCriteria?.length &&
       uncachedSortCriteria?.length &&
@@ -88,26 +109,11 @@ class StreamSorter {
         (stream) => stream.service?.cached === false
       );
 
-      // sort the 2 lists separately, and put them after the other, depending on the direction of cached
-      const cachedSorted = cachedStreams.slice().sort((a, b) => {
-        const aKey = this.dynamicSortKey(a, cachedSortCriteria, type);
-        const bKey = this.dynamicSortKey(b, cachedSortCriteria, type);
-        for (let i = 0; i < aKey.length; i++) {
-          if (aKey[i] < bKey[i]) return -1;
-          if (aKey[i] > bKey[i]) return 1;
-        }
-        return 0;
-      });
-
-      const uncachedSorted = uncachedStreams.slice().sort((a, b) => {
-        const aKey = this.dynamicSortKey(a, uncachedSortCriteria, type);
-        const bKey = this.dynamicSortKey(b, uncachedSortCriteria, type);
-        for (let i = 0; i < aKey.length; i++) {
-          if (aKey[i] < bKey[i]) return -1;
-          if (aKey[i] > bKey[i]) return 1;
-        }
-        return 0;
-      });
+      const cachedSorted = precomputeAndSort(cachedStreams, cachedSortCriteria);
+      const uncachedSorted = precomputeAndSort(
+        uncachedStreams,
+        uncachedSortCriteria
+      );
 
       if (primarySortCriteria[0].direction === 'desc') {
         sortedStreams = [...cachedSorted, ...uncachedSorted];
@@ -118,16 +124,7 @@ class StreamSorter {
       logger.debug(
         `using sort criteria: ${JSON.stringify(primarySortCriteria)}`
       );
-      sortedStreams = streams.slice().sort((a, b) => {
-        const aKey = this.dynamicSortKey(a, primarySortCriteria, type);
-        const bKey = this.dynamicSortKey(b, primarySortCriteria, type);
-
-        for (let i = 0; i < aKey.length; i++) {
-          if (aKey[i] < bKey[i]) return -1;
-          if (aKey[i] > bKey[i]) return 1;
-        }
-        return 0;
-      });
+      sortedStreams = precomputeAndSort(streams, primarySortCriteria);
     }
 
     const pinnedParts = [];
